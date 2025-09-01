@@ -17,6 +17,7 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
 
 
 require __DIR__.'/hr.php';
+require __DIR__.'/school.php';
 require __DIR__.'/employee.php';
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';

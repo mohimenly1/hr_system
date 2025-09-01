@@ -53,4 +53,11 @@ class User extends Authenticatable
     {
         return $this->hasOne(Employee::class);
     }
+       /**
+     * Get the teacher record associated with the user.
+     */
+    public function teacher(): HasOne
+    {
+        return $this->hasOne(Teacher::class);
+    }
 }
