@@ -64,22 +64,22 @@ const toggleSettingsMenu = () => {
 
                 <!-- Academic Management Section -->
                 <div class="mb-4">
-                    <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">الإدارة الأكاديمية</h3>
-                     <div class="mt-2 space-y-1">
-                        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
-                            <i class="fas fa-chalkboard-teacher fa-fw w-6 text-center"></i>
-                            <span class="ml-3">إدارة المعلمين (قريباً)</span>
-                        </a>
-                        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
-                            <i class="fas fa-user-graduate fa-fw w-6 text-center"></i>
-                            <span class="ml-3">إدارة الطلاب (قريباً)</span>
-                        </a>
-                         <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
-                            <i class="fas fa-calendar-week fa-fw w-6 text-center"></i>
-                            <span class="ml-3">الجداول الدراسية (قريباً)</span>
-                        </a>
-                    </div>
-                </div>
+    <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">الإدارة الأكاديمية</h3>
+    <div class="mt-2 space-y-1">
+        <Link :href="route('school.teachers.index')" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+            <i class="fas fa-chalkboard-teacher fa-fw w-6 text-center"></i>
+            <span class="ml-3">إدارة المعلمين</span>
+        </Link>
+        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
+            <i class="fas fa-user-graduate fa-fw w-6 text-center"></i>
+            <span class="ml-3">إدارة الطلاب (قريباً)</span>
+        </a>
+        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
+            <i class="fas fa-calendar-week fa-fw w-6 text-center"></i>
+            <span class="ml-3">الجداول الدراسية (قريباً)</span>
+        </a>
+    </div>
+</div>
 
                 <!-- Settings Section -->
                 <div>
