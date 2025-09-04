@@ -29,14 +29,14 @@ defineProps<{
                     <p class="text-sm opacity-80">Manage employees, payroll, and performance with ease.</p>
                 </div>
                 <div class="mt-10">
-                    <img src="/images/hr-illustration.jpg" alt="HR Illustration" class="w-72 drop-shadow-lg" />
+                    <img src="/images/logo-school-one.png" alt="HR Illustration" class="w-72 drop-shadow-lg" />
                 </div>
             </div>
 
             <!-- القسم الأيمن: فورم تسجيل الدخول -->
             <div class="p-10 flex flex-col justify-center">
-                <h2 class="text-2xl font-bold text-slate-800 mb-2">Welcome Back 👋</h2>
-                <p class="text-sm text-slate-500 mb-8">Please log in to your HR account</p>
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Welcome 👋</h2>
+                <p class="text-sm text-slate-500 mb-8">Please log in to your account</p>
 
                 <div v-if="status" class="mb-4 text-center text-sm font-medium text-green-600">
                     {{ status }}
@@ -67,14 +67,7 @@ defineProps<{
                     <div class="space-y-2">
                         <div class="flex items-center justify-between">
                             <Label for="password">Password</Label>
-                            <TextLink
-                                v-if="canResetPassword"
-                                :href="request()"
-                                class="text-sm text-indigo-600 hover:underline"
-                                :tabindex="5"
-                            >
-                                Forgot password?
-                            </TextLink>
+                 
                         </div>
                         <Input
                             id="password"
@@ -105,10 +98,6 @@ defineProps<{
                         Log in
                     </Button>
 
-                    <div class="text-center text-sm text-slate-500">
-                        Don’t have an account?
-                        <TextLink :href="register()" :tabindex="5" class="text-indigo-600 hover:underline">Sign up</TextLink>
-                    </div>
                 </Form>
             </div>
         </div>

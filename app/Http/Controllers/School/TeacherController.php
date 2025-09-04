@@ -4,18 +4,17 @@ namespace App\Http\Controllers\School;
 
 use App\Http\Controllers\Controller;
 use App\Models\Department;
+use App\Models\Grade;
 use App\Models\Teacher;
 use App\Models\User;
-use App\Models\Subject;
-use App\Models\Grade;
-use App\Models\Section;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Redirect;
 use Illuminate\Validation\Rules;
+use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class TeacherController extends Controller
 {
@@ -24,7 +23,7 @@ class TeacherController extends Controller
      */
     public function index()
     {
-        $teachers = Teacher::with(['user', 'department', 'subjects', 'contracts'])->latest()->paginate(10);
+        $teachers = Teacher::with(['user', 'department', 'assignments.subject', 'assignments.section.grade'])->latest()->paginate(10);
         return Inertia::render('School/Teachers/Index', [
             'teachers' => $teachers,
         ]);
@@ -35,19 +34,13 @@ class TeacherController extends Controller
      */
     public function create()
     {
-        // Load all departments
-        $departments = Department::all(['id', 'name']);
-        
-        // Load all grades with their sections
-        $grades = Grade::with('sections')->get();
-        
-        // Load all subjects separately
-        $allSubjects = Subject::all(['id', 'name']);
-    
+        $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
+
         return Inertia::render('School/Teachers/Create', [
-            'departments' => $departments,
-            'grades' => $grades,
-            'allSubjects' => $allSubjects,
+            'departments' => Department::all(['id', 'name']),
+            'grades' => $activeYear ? Grade::where('academic_year_id', $activeYear->id)
+                                        ->with(['sections', 'subjects:id,name'])
+                                        ->get() : [],
         ]);
     }
 
@@ -57,7 +50,6 @@ class TeacherController extends Controller
     public function store(Request $request)
     {
         $validatedData = $request->validate([
-            // Personal Info
             'personal.phone_number' => 'nullable|string|max:20',
             'personal.address' => 'nullable|string',
             'personal.date_of_birth' => 'nullable|date',
@@ -65,8 +57,7 @@ class TeacherController extends Controller
             'personal.marital_status' => 'nullable|string',
             'personal.emergency_contact_name' => 'nullable|string|max:255',
             'personal.emergency_contact_phone' => 'nullable|string|max:20',
-
-            // Employment & Contract Info
+            'personal.attachments.*' => 'nullable|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
             'employment.department_id' => 'required|exists:departments,id',
             'employment.hire_date' => 'required|date',
             'employment.employment_status' => 'required|in:active,on_leave,terminated',
@@ -74,17 +65,14 @@ class TeacherController extends Controller
             'employment.contract_type' => 'required|string',
             'employment.start_date' => 'required|date',
             'employment.salary_type' => 'required|string',
-            'employment.salary_amount' => 'required_if:employment.salary_type,fixed|nullable|numeric|min:0',
+            'employment.salary_amount' => 'required_if:employment.salary_type,monthly|nullable|numeric|min:0',
             'employment.hourly_rate' => 'required_if:employment.salary_type,hourly|nullable|numeric|min:0',
             'employment.working_hours_per_week' => 'nullable|numeric|min:0',
             'employment.notes' => 'nullable|string',
             'employment.status' => 'required|string',
-
-            // Subject Assignment Info
-            'subjects' => 'present|array',
-            'subjects.*.id' => 'required|exists:subjects,id',
-
-            // Account Info
+            'assignments' => 'present|array',
+            'assignments.*.subject_id' => 'required|exists:subjects,id',
+            'assignments.*.section_id' => 'required|exists:sections,id',
             'account.name' => 'required|string|max:255',
             'account.email' => 'required|string|email|max:255|unique:users,email',
             'account.password' => ['required', 'confirmed', Rules\Password::defaults()],
@@ -92,54 +80,92 @@ class TeacherController extends Controller
 
         DB::beginTransaction();
         try {
-            // 1. Create User
             $user = User::create([
                 'name' => $validatedData['account']['name'],
                 'email' => $validatedData['account']['email'],
                 'password' => Hash::make($validatedData['account']['password']),
             ]);
-
-            // 2. Assign Role
             $user->assignRole('teacher');
 
-            // 3. Create Teacher
-            $teacher = $user->teacher()->create([
-                'department_id' => $validatedData['employment']['department_id'],
-                'specialization' => $validatedData['employment']['specialization'],
-                'hire_date' => $validatedData['employment']['hire_date'],
-                'employment_status' => $validatedData['employment']['employment_status'],
-                'phone_number' => $validatedData['personal']['phone_number'],
-                'address' => $validatedData['personal']['address'],
-                'date_of_birth' => $validatedData['personal']['date_of_birth'],
-                'gender' => $validatedData['personal']['gender'],
-                'marital_status' => $validatedData['personal']['marital_status'],
-                'emergency_contact_name' => $validatedData['personal']['emergency_contact_name'],
-                'emergency_contact_phone' => $validatedData['personal']['emergency_contact_phone'],
-            ]);
+            // --- THIS IS THE FIX ---
+            // 1. Prepare data specifically for the Teacher model
+            $teacherData = $validatedData['personal'];
+            $teacherData['department_id'] = $validatedData['employment']['department_id'];
+            $teacherData['specialization'] = $validatedData['employment']['specialization'];
+            $teacherData['hire_date'] = $validatedData['employment']['hire_date'];
+            $teacherData['employment_status'] = $validatedData['employment']['employment_status'];
 
-            // 4. Create Contract
-            $teacher->contracts()->create([
-                'contract_type' => $validatedData['employment']['contract_type'],
-                'start_date' => $validatedData['employment']['start_date'],
-                'salary_type' => $validatedData['employment']['salary_type'],
-                'salary_amount' => $validatedData['employment']['salary_amount'],
-                'hourly_rate' => $validatedData['employment']['hourly_rate'],
-                'working_hours_per_week' => $validatedData['employment']['working_hours_per_week'],
-                'notes' => $validatedData['employment']['notes'],
-                'status' => $validatedData['employment']['status'],
-            ]);
-
-            // 5. Sync Subjects
-            $subjectIds = collect($validatedData['subjects'])->pluck('id')->toArray();
-            $teacher->subjects()->sync($subjectIds);
+            // 2. Create the teacher with only its own data
+            $teacher = $user->teacher()->create($teacherData);
             
+            // 3. Prepare and create the contract with its own data
+            $contractData = $validatedData['employment'];
+            $teacher->contracts()->create($contractData);
+            
+            // 4. Create assignments
+            $teacher->assignments()->createMany($validatedData['assignments']);
+            
+            // 5. Handle attachments
+            if ($request->hasFile('personal.attachments')) {
+                foreach ($request->file('personal.attachments') as $file) {
+                    $path = $file->store("teachers/{$teacher->id}/attachments", 'public');
+                    $teacher->attachments()->create([
+                        'file_path' => $path,
+                        'file_name' => $file->getClientOriginalName(),
+                        'file_type' => $file->getClientMimeType(),
+                    ]);
+                }
+            }
+
             DB::commit();
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return Redirect::back()->with('error', 'حدث خطأ أثناء حفظ بيانات المعلم. يرجى المحاولة مرة أخرى.');
+            Log::error('Error creating teacher: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return Redirect::back()->with('error', 'حدث خطأ أثناء حفظ بيانات المعلم. يرجى مراجعة سجل الأخطاء.');
         }
 
         return Redirect::route('school.teachers.index')->with('success', 'تمت إضافة المعلم وعقده بنجاح.');
     }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(Teacher $teacher)
+    {
+        // Eager load all relationships including attachments
+        $teacher->load(['user', 'department', 'contracts' => fn($q) => $q->latest(), 'assignments.subject', 'assignments.section.grade', 'attachments']);
+
+        // Add a downloadable URL to each attachment
+        $teacher->attachments->each(function ($attachment) {
+            $attachment->url = Storage::url($attachment->file_path);
+        });
+
+        return Inertia::render('School/Teachers/Show', [
+            'teacher' => $teacher
+        ]);
+    }
+
+    /**
+     * Store a new attachment for the specified teacher.
+     */
+    public function storeAttachment(Request $request, Teacher $teacher)
+    {
+        $request->validate([
+            'attachment_name' => 'required|string|max:255',
+            'attachment_file' => 'required|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
+        ]);
+
+        $file = $request->file('attachment_file');
+        $path = $file->store("teachers/{$teacher->id}/attachments", 'public');
+
+        $teacher->attachments()->create([
+            'file_path' => $path,
+            'file_name' => $request->input('attachment_name'),
+            'file_type' => $file->getClientMimeType(),
+        ]);
+
+        return Redirect::back()->with('success', 'تم رفع المرفق بنجاح.');
+    }
 }
+

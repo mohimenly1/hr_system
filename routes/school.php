@@ -24,8 +24,9 @@ Route::middleware(['auth', 'verified'])->prefix('school')->name('school.')->grou
       Route::resource('subjects', SubjectController::class)->except(['show', 'create', 'edit']);
       Route::post('grades/assign-subjects', [GradeSubjectController::class, 'store'])->name('grades.assign.subjects');
         // --- Teachers Routes ---
-    Route::resource('teachers', TeacherController::class)->except(['create', 'show', 'edit', 'update']);
-    Route::get('teachers/create', [TeacherController::class, 'create'])->name('teachers.create');
+      // --- Teachers Routes (UPDATED) ---
+    // This now includes routes for index, create, store, show, edit, update, destroy.
+    Route::resource('teachers', TeacherController::class);
 
 
 });

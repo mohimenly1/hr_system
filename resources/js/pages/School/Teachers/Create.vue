@@ -1,7 +1,7 @@
 <script setup>
 import HrLayout from '../../../layouts/HrLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { ref, computed } from 'vue';
 
 const props = defineProps({
     departments: Array,
@@ -13,70 +13,73 @@ const stepErrors = ref({});
 
 const form = useForm({
     personal: {
-        phone_number: '',
-        address: '',
-        date_of_birth: '',
-        gender: '',
-        marital_status: '',
-        emergency_contact_name: '',
-        emergency_contact_phone: '',
+        phone_number: '', address: '', date_of_birth: '', gender: '', marital_status: '',
+        emergency_contact_name: '', emergency_contact_phone: '',
+        attachments: [], // For handling file uploads
     },
     employment: {
-        department_id: '',
-        specialization: '',
-        hire_date: '',
-        employment_status: 'active',
-        contract_type: 'محدد المدة',
-        start_date: '',
-        salary_type: 'fixed',
-        salary_amount: 0,
-        hourly_rate: 0,
-        working_hours_per_week: null,
-        notes: '',
-        status: 'active',
+        department_id: '', specialization: '', hire_date: '', employment_status: 'active',
+        contract_type: 'monthly', start_date: '', salary_type: 'monthly',
+        salary_amount: 0, hourly_rate: 0, working_hours_per_week: null,
+        notes: '', status: 'active',
     },
-    subjects: [], // Holds the assigned subjects
+    assignments: [], // Will hold objects like { subject_id: 1, section_id: 2 }
     account: {
-        name: '',
-        email: '',
-        password: '',
-        password_confirmation: '',
+        name: '', email: '', password: '', password_confirmation: '',
     },
 });
 
-// For Subject Assignment Step
-const selectedGrade = ref(null);
-const selectedSection = ref(null);
-const availableSubjects = ref([]);
+const selectedGradeIds = ref([]);
 
-watch(selectedSection, (newSection) => {
-    if (newSection) {
-        // Find the selected grade to get its sections
-        const grade = props.grades.find(g => g.id === selectedGrade.value);
-        if (grade) {
-            // Find the selected section to get its subjects
-            const section = grade.sections.find(s => s.id === newSection);
-            if (section && section.subjects) {
-                availableSubjects.value = section.subjects;
-            } else {
-                availableSubjects.value = [];
+// This computed property filters the full grade objects based on selected IDs.
+const selectedGradesData = computed(() => {
+    return props.grades.filter(grade => selectedGradeIds.value.includes(grade.id));
+});
+
+
+// --- UPDATED FUNCTION FOR BETTER REACTIVITY ---
+const toggleAssignment = (subjectId, sectionId) => {
+    const assignmentIndex = form.assignments.findIndex(
+        a => a.subject_id === subjectId && a.section_id === sectionId
+    );
+
+    if (assignmentIndex > -1) {
+        // To ensure reactivity, we filter and create a new array
+        form.assignments = form.assignments.filter(
+            (_, index) => index !== assignmentIndex
+        );
+    } else {
+        // We add the new item by creating a new array
+        form.assignments = [
+            ...form.assignments,
+            { subject_id: subjectId, section_id: sectionId }
+        ];
+    }
+};
+
+const assignmentSummary = computed(() => {
+    return form.assignments.map(assignment => {
+        for (const grade of props.grades) {
+            const section = grade.sections.find(s => s.id === assignment.section_id);
+            if (section) {
+                const subject = grade.subjects.find(sub => sub.id === assignment.subject_id);
+                if (subject) {
+                    return {
+                        id: `${section.id}-${subject.id}`,
+                        text: `${subject.name} - ${grade.name} (${section.name})`
+                    };
+                }
             }
         }
-    } else {
-        availableSubjects.value = [];
-    }
+        return null;
+    }).filter(Boolean);
 });
 
-const addSubjectToTeacher = (subject) => {
-    // Check if the subject is already added to avoid duplicates
-    if (!form.subjects.some(s => s.id === subject.id)) {
-        form.subjects.push(subject);
-    }
+// New method to handle file uploads
+const handleFileUpload = (event) => {
+    form.personal.attachments = Array.from(event.target.files);
 };
 
-const removeSubjectFromTeacher = (subjectId) => {
-    form.subjects = form.subjects.filter(s => s.id !== subjectId);
-};
 
 const validateStep = () => {
     stepErrors.value = {};
@@ -88,11 +91,14 @@ const validateStep = () => {
         if (!emp.specialization) { stepErrors.value.specialization = 'التخصص حقل مطلوب.'; isValid = false; }
         if (!emp.hire_date) { stepErrors.value.hire_date = 'تاريخ التعيين حقل مطلوب.'; isValid = false; }
         if (!emp.start_date) { stepErrors.value.start_date = 'تاريخ بدء العقد حقل مطلوب.'; isValid = false; }
-        if (emp.salary_type === 'fixed' && !emp.salary_amount) { stepErrors.value.salary_amount = 'مبلغ الراتب الأساسي حقل مطلوب.'; isValid = false; }
-        if (emp.salary_type === 'hourly' && !emp.hourly_rate) { stepErrors.value.hourly_rate = 'مبلغ الأجر بالساعة حقل مطلوب.'; isValid = false; }
+        if (emp.salary_type === 'monthly' && (!emp.salary_amount || emp.salary_amount <= 0)) { stepErrors.value.salary_amount = 'مبلغ الراتب الأساسي حقل مطلوب.'; isValid = false; }
+        if (emp.salary_type === 'hourly' && (!emp.hourly_rate || emp.hourly_rate <= 0)) { stepErrors.value.hourly_rate = 'مبلغ الأجر بالساعة حقل مطلوب.'; isValid = false; }
     }
     if (currentStep.value === 3) {
-        if (!form.subjects.length) { stepErrors.value.subjects = 'يجب إسناد مقرر دراسي واحد على الأقل.'; isValid = false; }
+        if (form.assignments.length === 0) {
+            stepErrors.value.assignments = 'يجب إسناد مقرر دراسي واحد على الأقل.';
+            isValid = false;
+        }
     }
     if (currentStep.value === 4) {
         const acc = form.account;
@@ -105,20 +111,8 @@ const validateStep = () => {
     return isValid;
 };
 
-const nextStep = () => {
-    if (validateStep()) {
-        if (currentStep.value < 4) {
-            currentStep.value++;
-        }
-    }
-};
-
-const prevStep = () => {
-    stepErrors.value = {};
-    if (currentStep.value > 1) {
-        currentStep.value--;
-    }
-};
+const nextStep = () => { if (validateStep() && currentStep.value < 4) currentStep.value++; };
+const prevStep = () => { if (currentStep.value > 1) currentStep.value--; };
 
 const submit = () => {
     if (validateStep()) {
@@ -133,12 +127,11 @@ const submit = () => {
     <Head title="إضافة معلم جديد" />
 
     <HrLayout>
-        <template #header>
-            إضافة معلم جديد
-        </template>
+        <template #header>إضافة معلم جديد</template>
 
-        <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-lg">
-            <div class="p-6 border-b rounded-t-lg bg-gray-50">
+        <div class="max-w-5xl mx-auto bg-white shadow-xl rounded-lg">
+            <!-- Step Indicator -->
+             <div class="p-6 border-b rounded-t-lg bg-gray-50">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center text-center">
                         <div :class="currentStep >= 1 ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-600'" class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg">1</div>
@@ -161,10 +154,10 @@ const submit = () => {
                     </div>
                 </div>
             </div>
-
+            
             <form @submit.prevent="submit" class="p-8">
-
-                <div v-if="currentStep === 1">
+                <!-- Step 1: Personal Information -->
+                <div v-show="currentStep === 1">
                     <h3 class="text-xl font-semibold mb-6 text-gray-800">1. المعلومات الشخصية (اختياري)</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -185,14 +178,24 @@ const submit = () => {
                         </div>
                         <div>
                             <label for="marital_status" class="block mb-2 text-sm font-medium text-gray-900">الحالة الاجتماعية</label>
-                            <input type="text" id="marital_status" v-model="form.personal.marital_status" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
+                             <select id="marital_status" v-model="form.personal.marital_status" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
+                                <option value="" disabled>اختر..</option>
+                                <option value="single">أعزب/عزباء</option>
+                                <option value="married">متزوج/متزوجة</option>
+                                <option value="divorced">مطلق/مطلقة</option>
+                                <option value="widowed">أرمل/أرملة</option>
+                            </select>
                         </div>
                         <div class="md:col-span-2">
                             <label for="address" class="block mb-2 text-sm font-medium text-gray-900">العنوان</label>
                             <textarea id="address" rows="3" v-model="form.personal.address" class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300"></textarea>
                         </div>
                         <div class="md:col-span-2">
-                            <h4 class="text-lg font-medium mb-2 text-gray-700">جهة اتصال للطوارئ</h4>
+                             <label for="attachments" class="block mb-2 text-sm font-medium text-gray-900">المرفقات (CV، صورة شخصية، ...)</label>
+                             <input type="file" @change="handleFileUpload" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+                        </div>
+                        <div class="md:col-span-2 p-4 border rounded-lg">
+                            <h4 class="text-md font-semibold mb-2 text-gray-700">جهة اتصال للطوارئ</h4>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label for="emergency_contact_name" class="block mb-2 text-sm font-medium text-gray-900">اسم الشخص</label>
@@ -207,7 +210,8 @@ const submit = () => {
                     </div>
                 </div>
 
-                <div v-if="currentStep === 2">
+                <!-- Step 2: Employment Information -->
+                <div v-show="currentStep === 2">
                     <h3 class="text-xl font-semibold mb-6 text-gray-800">2. المعلومات الوظيفية والعقد</h3>
                     <div class="border-b pb-6 mb-6">
                         <h4 class="text-lg font-medium mb-4 text-gray-700">معلومات عامة</h4>
@@ -246,8 +250,8 @@ const submit = () => {
                             <div>
                                 <label class="block mb-2 text-sm font-medium text-gray-900">نوع العقد*</label>
                                 <select v-model="form.employment.contract_type" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
-                                    <option>محدد المدة</option>
-                                    <option>غير محدد المدة</option>
+                                    <option value="monthly">شهري</option>
+                                    <option value="hourly">بالساعة</option>
                                 </select>
                             </div>
                             <div>
@@ -258,11 +262,11 @@ const submit = () => {
                             <div>
                                 <label class="block mb-2 text-sm font-medium text-gray-900">نوع الراتب*</label>
                                 <select v-model="form.employment.salary_type" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
-                                    <option value="fixed">راتب ثابت</option>
+                                    <option value="monthly">راتب شهري</option>
                                     <option value="hourly">أجر بالساعة</option>
                                 </select>
                             </div>
-                            <div v-if="form.employment.salary_type === 'fixed'">
+                            <div v-if="form.employment.salary_type === 'monthly'">
                                 <label class="block mb-2 text-sm font-medium text-gray-900">مبلغ الراتب الأساسي*</label>
                                 <input type="number" step="0.01" v-model="form.employment.salary_amount" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
                                 <div v-if="stepErrors.salary_amount" class="text-sm text-red-600 mt-1">{{ stepErrors.salary_amount }}</div>
@@ -284,54 +288,65 @@ const submit = () => {
                     </div>
                 </div>
 
-                <div v-if="currentStep === 3">
+                <!-- Step 3: Subject Assignment (NEW UI) -->
+                <div v-show="currentStep === 3">
                     <h3 class="text-xl font-semibold mb-6 text-gray-800">3. إسناد المقررات الدراسية</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                        <div>
-                            <label for="grade" class="block mb-2 text-sm font-medium text-gray-900">المرحلة الدراسية*</label>
-                            <select id="grade" v-model="selectedGrade" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
-                                <option :value="null" disabled>اختر مرحلة</option>
-                                <option v-for="grade in grades" :key="grade.id" :value="grade.id">{{ grade.name }}</option>
-                            </select>
-                        </div>
-                        <div v-if="selectedGrade">
-                            <label for="section" class="block mb-2 text-sm font-medium text-gray-900">الشعبة*</label>
-                            <select id="section" v-model="selectedSection" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
-                                <option :value="null" disabled>اختر شعبة</option>
-                                <option v-for="section in grades.find(g => g.id === selectedGrade).sections" :key="section.id" :value="section.id">{{ section.name }}</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div v-if="availableSubjects.length">
-                        <h4 class="text-lg font-medium mb-4 text-gray-700">المقررات المتاحة</h4>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-40 overflow-y-auto border p-4 rounded-md">
-                            <div v-for="subject in availableSubjects" :key="subject.id" @click="addSubjectToTeacher(subject)"
-                                :class="{'bg-indigo-600 text-white': form.subjects.some(s => s.id === subject.id), 'bg-gray-100 text-gray-800 hover:bg-indigo-100': !form.subjects.some(s => s.id === subject.id)}"
-                                class="cursor-pointer select-none rounded-md px-3 py-1 text-center text-sm font-medium transition-colors duration-200">
-                                {{ subject.name }}
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Grade Selector -->
+                        <div class="md:col-span-1 border-r pr-4 rtl:border-r-0 rtl:border-l rtl:pr-0 rtl:pl-4">
+                            <h4 class="font-bold mb-2 text-gray-700">1. اختر المراحل</h4>
+                            <div class="space-y-2 max-h-96 overflow-y-auto">
+                                <label v-for="grade in grades" :key="grade.id" class="flex items-center p-2 rounded-lg hover:bg-gray-50">
+                                    <input type="checkbox" :value="grade.id" v-model="selectedGradeIds" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                    <span class="ml-3 rtl:ml-0 rtl:mr-3 text-sm font-medium text-gray-800">{{ grade.name }}</span>
+                                </label>
                             </div>
                         </div>
+
+                        <!-- Subject & Section Selector -->
+                        <div class="md:col-span-2">
+                             <h4 class="font-bold mb-2 text-gray-700">2. اختر المقررات والشعب</h4>
+                             <div class="space-y-6 max-h-96 overflow-y-auto pr-2">
+                                <div v-if="!selectedGradesData.length" class="text-center text-gray-500 p-8">
+                                    الرجاء اختيار مرحلة دراسية من القائمة لعرض مقرراتها.
+                                </div>
+                                <div v-for="grade in selectedGradesData" :key="grade.id">
+                                    <h5 class="font-semibold text-indigo-700 border-b pb-2 mb-3">{{ grade.name }}</h5>
+                                     <!-- NEW: Smart message if sections are missing -->
+                                    <div v-if="!grade.sections || grade.sections.length === 0" class="text-sm text-red-500 p-2 bg-red-50 rounded-md">
+                                        لا توجد شعب معرفة لهذه المرحلة. يرجى <Link :href="route('school.sections.index')" class="font-bold underline">إضافة شعب</Link> أولاً.
+                                    </div>
+                                    <div v-else class="space-y-4">
+                                        <div v-for="subject in grade.subjects" :key="subject.id" class="pl-2 rtl:pl-0 rtl:pr-2">
+                                            <p class="font-medium text-gray-800">{{ subject.name }}</p>
+                                            <div class="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+                                                <label v-for="section in grade.sections" :key="section.id" class="flex items-center text-sm">
+                                                    <input type="checkbox" @change="toggleAssignment(subject.id, section.id)"
+                                                           :checked="form.assignments.some(a => a.subject_id === subject.id && a.section_id === section.id)"
+                                                           class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                                    <span class="ml-2 rtl:ml-0 rtl:mr-2 text-gray-700">شعبة {{ section.name }}</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                             </div>
+                        </div>
                     </div>
-                    
-                    <div class="mt-8">
-                        <h4 class="text-lg font-medium mb-4 text-gray-700">المقررات المسندة للمعلم</h4>
-                        <div v-if="form.subjects.length" class="flex flex-wrap gap-2 p-2 border rounded-md">
-                            <span v-for="subject in form.subjects" :key="subject.id" class="inline-flex items-center rounded-full bg-blue-100 px-3 py-0.5 text-sm font-medium text-blue-800">
-                                {{ subject.name }}
-                                <button type="button" @click="removeSubjectFromTeacher(subject.id)" class="ml-1 -mr-0.5 h-4 w-4 rounded-full text-blue-500 hover:text-blue-700 transition-colors">
-                                    <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M10 8.586L15.293 3.293a1 1 0 011.414 1.414L11.414 10l5.293 5.293a1 1 0 01-1.414 1.414L10 11.414l-5.293 5.293a1 1 0 01-1.414-1.414L8.586 10 3.293 4.707a1 1 0 011.414-1.414L10 8.586z" />
-                                    </svg>
-                                </button>
+                     <div class="mt-8">
+                        <h4 class="text-lg font-medium mb-4 text-gray-700">ملخص الإسناد</h4>
+                        <div v-if="assignmentSummary.length" class="flex flex-wrap gap-2 p-2 border rounded-md bg-gray-50">
+                            <span v-for="summary in assignmentSummary" :key="summary.id" class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800">
+                                {{ summary.text }}
                             </span>
                         </div>
                         <p v-else class="text-gray-500 text-sm">لم يتم إسناد أي مقرر دراسي بعد.</p>
-                        <div v-if="stepErrors.subjects" class="text-sm text-red-600 mt-1">{{ stepErrors.subjects }}</div>
+                        <div v-if="stepErrors.assignments" class="text-sm text-red-600 mt-1">{{ stepErrors.assignments }}</div>
                     </div>
                 </div>
 
-                <div v-if="currentStep === 4">
+                <!-- Step 4: User Account -->
+                <div v-show="currentStep === 4">
                     <h3 class="text-xl font-semibold mb-6 text-gray-800">4. حساب المستخدم للخدمات الذاتية</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -357,21 +372,13 @@ const submit = () => {
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between mt-8 pt-6 border-t">
-                    <Link :href="route('school.teachers.index')" class="text-gray-600 hover:text-gray-900">
-                        إلغاء
-                    </Link>
-
-                    <div class="flex items-center space-x-4">
-                        <button type="button" @click="prevStep" v-if="currentStep > 1" class="bg-gray-200 text-gray-800 px-6 py-2 rounded-md hover:bg-gray-300">
-                            السابق
-                        </button>
-                        <button type="button" @click="nextStep" v-if="currentStep < 4" class="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700">
-                            التالي
-                        </button>
-                        <button type="submit" v-if="currentStep === 4" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700" :disabled="form.processing">
-                            حفظ المعلم
-                        </button>
+                <!-- Navigation Buttons -->
+                 <div class="flex items-center justify-between mt-8 pt-6 border-t">
+                    <Link :href="route('school.teachers.index')" class="text-gray-600 hover:text-gray-900">إلغاء</Link>
+                    <div class="flex items-center space-x-4 rtl:space-x-reverse">
+                        <button type="button" @click="prevStep" v-if="currentStep > 1" class="bg-gray-200 text-gray-800 px-6 py-2 rounded-md hover:bg-gray-300">السابق</button>
+                        <button type="button" @click="nextStep" v-if="currentStep < 4" class="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700">التالي</button>
+                        <button type="submit" v-if="currentStep === 4" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700" :disabled="form.processing">حفظ المعلم</button>
                     </div>
                 </div>
             </form>
