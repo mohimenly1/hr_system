@@ -37,6 +37,12 @@ Route::middleware(['auth', 'verified'])->prefix('school')->name('school.')->grou
     Route::resource('teacher-contracts', TeacherContractController::class)->except(['create', 'show', 'edit', 'index']);
     Route::put('teacher-contracts/{teacherContract}/status', [TeacherContractController::class, 'updateStatus'])->name('teacher-contracts.status.update');
     Route::put('teachers/{teacher}/fingerprint', [TeacherController::class, 'updateFingerprintId'])->name('teachers.fingerprint.update');
+// مسار لعرض صفحة سجل حضور المعلم
+Route::get('/teachers/{teacher}/attendance', [TeacherController::class, 'showAttendance'])
+    ->name('teachers.attendance.show');
 
+// مسار لتنفيذ مزامنة الحضور لمعلم واحد
+Route::post('/teachers/{teacher}/attendance/sync', [TeacherController::class, 'syncSingleAttendance'])
+    ->name('teachers.attendance.sync');
 });
 

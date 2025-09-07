@@ -54,6 +54,14 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
         Route::get('fingerprint/device-users', [FingerprintDeviceController::class, 'getDeviceUsers'])->name('fingerprint.device.users');
         Route::delete('fingerprint/clear-users', [FingerprintDeviceController::class, 'clearDeviceUsers'])->name('fingerprint.clear.users');
         Route::post('/fingerprint/sync-monthly', [FingerprintDeviceController::class, 'syncMonthly'])->name('fingerprint.sync.monthly');
+        // مسار لعرض صفحة سجل حضور الموظف
+Route::get('/employees/{employee}/attendance', [EmployeeController::class, 'showAttendance'])
+->name('employees.attendance.show');
+
+// مسار لتنفيذ مزامنة الحضور لموظف واحد
+Route::post('/employees/{employee}/attendance/sync', [EmployeeController::class, 'syncSingleAttendance'])
+->name('employees.attendance.sync');
+
 
 
 });

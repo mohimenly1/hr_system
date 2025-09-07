@@ -1,13 +1,13 @@
 <script setup>
 import HrLayout from '../../../layouts/HrLayout.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
 defineProps({
     employees: Object,
 });
 
-// --- NEW STATE & LOGIC FOR FINGERPRINT MODAL ---
+// --- Modal for Fingerprint ID ---
 const showFingerprintModal = ref(false);
 const selectedEmployee = ref(null);
 const fingerprintForm = useForm({
@@ -27,6 +27,22 @@ const submitFingerprintId = () => {
             fingerprintForm.reset();
         },
         preserveScroll: true,
+    });
+};
+
+// --- NEW: Logic for syncing single employee attendance ---
+const syncingEmployeeId = ref(null);
+
+const syncEmployeeAttendance = (employeeId) => {
+    // Prevent multiple clicks
+    if (syncingEmployeeId.value) return;
+    
+    syncingEmployeeId.value = employeeId;
+    router.post(route('hr.employees.attendance.sync', employeeId), {}, {
+        preserveScroll: true,
+        onFinish: () => {
+            syncingEmployeeId.value = null; // Reset on completion or error
+        }
     });
 };
 
@@ -92,11 +108,26 @@ const getStatusClass = (status) => {
                                 </span>
                             </td>
                             <td class="py-3 px-4 whitespace-nowrap text-center">
-                                <button @click="openFingerprintModal(employee)" class="text-gray-500 hover:text-indigo-600 me-4" title="تعديل رقم البصمة">
-                                    <i class="fas fa-fingerprint"></i>
-                                </button>
-                                <Link :href="route('hr.employees.show', employee.id)" class="text-indigo-600 hover:text-indigo-900 font-medium me-4">عرض</Link>
-                                <Link :href="route('hr.employees.edit', employee.id)" class="text-blue-600 hover:text-blue-900 font-medium">تعديل</Link>
+                                <div class="flex items-center justify-center space-x-4 rtl:space-x-reverse">
+                                    <!-- NEW: Attendance Actions -->
+                                    <Link :href="route('hr.employees.attendance.show', employee.id)" class="text-gray-500 hover:text-green-600" title="عرض سجل الحضور">
+                                        <i class="fas fa-calendar-alt text-lg"></i>
+                                    </Link>
+                                    <button @click="syncEmployeeAttendance(employee.id)" 
+                                            class="text-gray-500 hover:text-blue-600" 
+                                            :disabled="syncingEmployeeId === employee.id" 
+                                            title="مزامنة حضور اليوم">
+                                        <i class="fas text-lg" :class="{'fa-sync-alt': syncingEmployeeId !== employee.id, 'fa-spinner fa-spin': syncingEmployeeId === employee.id}"></i>
+                                    </button>
+                                     <button @click="openFingerprintModal(employee)" class="text-gray-500 hover:text-purple-600" title="تعديل رقم البصمة">
+                                        <i class="fas fa-fingerprint text-lg"></i>
+                                    </button>
+                                    
+                                    <!-- Existing Links -->
+                                    <span class="border-r border-gray-300 h-6"></span>
+                                    <Link :href="route('hr.employees.show', employee.id)" class="text-indigo-600 hover:text-indigo-900 font-medium">عرض</Link>
+                                    <Link :href="route('hr.employees.edit', employee.id)" class="text-blue-600 hover:text-blue-900 font-medium">تعديل</Link>
+                                </div>
                             </td>
                         </tr>
                         <tr v-if="employees.data.length === 0">
@@ -129,4 +160,3 @@ const getStatusClass = (status) => {
 
     </HrLayout>
 </template>
-

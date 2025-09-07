@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use App\Models\WorkExperience;
+use App\Services\FingerprintService; // سنفترض وجود خدمة لسحب البصمة
+
 
 class EmployeeController extends Controller
 {
@@ -408,6 +410,51 @@ class EmployeeController extends Controller
         $employee->update(['fingerprint_id' => $validated['fingerprint_id']]);
 
         return Redirect::back()->with('success', 'تم تحديث رقم البصمة بنجاح.');
+    }
+
+    public function showAttendance(Employee $employee)
+    {
+        // تحميل بيانات المستخدم المرتبطة بالموظف
+        $employee->load('user');
+
+        // جلب سجلات الحضور الخاصة بالموظف مع ترتيبها من الأحدث للأقدم وتقسيمها لصفحات
+        $attendances = $employee->attendances()
+                                ->orderBy('attendance_date', 'desc')
+                                ->paginate(15);
+
+        // إرسال البيانات إلى واجهة العرض
+        return Inertia::render('HR/Employees/Attendance/Show', [
+            'employee' => $employee,
+            'attendances' => $attendances,
+        ]);
+    }
+
+    /**
+     * Sync today's attendance for a single employee from the fingerprint device.
+     * مزامنة حضور اليوم لموظف واحد من جهاز البصمة
+     */
+    public function syncSingleAttendance(Employee $employee, FingerprintService $fingerprintService)
+    {
+        if (!$employee->fingerprint_id) {
+            return back()->with('error', 'هذا الموظف لا يملك رقم بصمة.');
+        }
+
+        try {
+            // استدعاء الخدمة لمزامنة موظف واحد فقط
+            $result = $fingerprintService->syncSingleUser(
+                $employee->fingerprint_id,
+                now()->toDateString()
+            );
+
+            if ($result) {
+                return back()->with('success', 'تمت مزامنة حضور الموظف بنجاح.');
+            } else {
+                return back()->with('info', 'لا توجد سجلات بصمة جديدة للموظف اليوم.');
+            }
+        } catch (\Exception $e) {
+            // في حال حدوث أي خطأ
+            return back()->with('error', 'حدث خطأ أثناء الاتصال بالجهاز: ' . $e->getMessage());
+        }
     }
 }
 

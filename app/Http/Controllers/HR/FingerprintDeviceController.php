@@ -189,15 +189,11 @@ class FingerprintDeviceController extends Controller
 
             $appTimezone = config('app.timezone'); 
             
-            // فلترة السجلات ضمن النطاق الزمني مع معالجة فارق التوقيت
             $filteredLogs = collect($logs)->filter(function ($log) use ($startDate, $endDate, $appTimezone) {
-                //  ***** التصحيح الأول: استخدام 'record_time' و 'user_id' *****
                 if (!isset($log['record_time'], $log['user_id'])) {
                     return false;
                 }
-                
                 $logTimestamp = Carbon::parse($log['record_time'])->setTimezone($appTimezone);
-                
                 return $logTimestamp->between($startDate->copy()->startOfDay(), $endDate->copy()->endOfDay());
             });
 
@@ -212,23 +208,30 @@ class FingerprintDeviceController extends Controller
             $totalProcessedCount = 0;
             
             foreach ($logsByDay as $dateString => $dayLogs) {
-                // ***** التصحيح الثاني: التجميع باستخدام 'user_id' *****
                 $logsByUser = $dayLogs->groupBy('user_id');
 
                 foreach ($logsByUser as $fingerprintId => $userLogs) {
-                    $user = User::where('fingerprint_id', $fingerprintId)->first();
-                    if (!$user) continue;
+                    // --- الخطوة 2: البحث مباشرة في جدول الموظفين ثم المعلمين ---
+                    $person = Employee::where('fingerprint_id', $fingerprintId)->first();
+                    
+                    if (!$person) {
+                        $person = Teacher::where('fingerprint_id', $fingerprintId)->first();
+                    }
 
-                    $person = $user->employee;
-                    if (!$person) continue;
+                    // إذا لم يتم العثور على الشخص، انتقل إلى السجل التالي
+                    if (!$person) {
+                        Log::warning("Fingerprint ID {$fingerprintId} from device does not match any employee or teacher.");
+                        continue;
+                    }
 
-                    // ***** التصحيح الثالث: استخدام 'record_time' عند جلب الوقت *****
                     $checkIn = $userLogs->min('record_time');
                     $checkOut = $userLogs->count() > 1 ? $userLogs->max('record_time') : null;
 
+                    // --- الخطوة 3: استخدام العلاقة متعددة الأشكال للحفظ ---
                     Attendance::updateOrCreate(
                         [
-                            'employee_id' => $person->id,
+                            'attendable_id'   => $person->id,
+                            'attendable_type' => get_class($person),
                             'attendance_date' => $dateString,
                         ],
                         [
@@ -242,7 +245,7 @@ class FingerprintDeviceController extends Controller
             }
             
             if ($totalProcessedCount === 0) {
-                return ['status' => 'info', 'message' => 'تم العثور على سجلات بصمة ولكن لم يتم ربطها بأي موظفين مسجلين.'];
+                return ['status' => 'info', 'message' => 'تم العثور على سجلات بصمة ولكن لم يتم ربطها بأي موظفين أو معلمين مسجلين.'];
             }
 
             return ['status' => 'success', 'message' => "تمت المزامنة بنجاح. تمت معالجة {$totalProcessedCount} سجل."];
@@ -253,7 +256,6 @@ class FingerprintDeviceController extends Controller
             return ['status' => 'error', 'message' => 'حدث خطأ أثناء المزامنة: ' . $e->getMessage()];
         }
     }
-
 
     public function syncAttendance(Request $request)
     {

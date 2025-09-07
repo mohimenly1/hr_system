@@ -7,7 +7,7 @@ defineProps({
     teachers: Object,
 });
 
-// --- NEW STATE & LOGIC FOR FINGERPRINT MODAL ---
+// --- STATE & LOGIC FOR FINGERPRINT MODAL ---
 const showFingerprintModal = ref(false);
 const selectedTeacher = ref(null);
 const fingerprintForm = useForm({
@@ -84,12 +84,24 @@ const getStatusClass = (status) => {
                                     {{ teacher.employment_status === 'active' ? 'نشط' : (teacher.employment_status === 'on_leave' ? 'في إجازة' : 'منتهية خدمته') }}
                                 </span>
                             </td>
-                            <td class="py-3 px-4 space-x-4 rtl:space-x-reverse whitespace-nowrap text-center">
-                                <button @click="openFingerprintModal(teacher)" class="text-gray-500 hover:text-indigo-600" title="تعديل رقم البصمة">
-                                    <i class="fas fa-fingerprint"></i>
-                                </button>
-                                <Link :href="route('school.teachers.show', teacher.id)" class="text-indigo-600 hover:text-indigo-900 font-medium">عرض</Link>
-                                <Link :href="route('school.teachers.edit', teacher.id)" class="text-blue-600 hover:text-blue-900 font-medium">تعديل</Link>
+                            <td class="py-3 px-4 whitespace-nowrap text-center">
+                                <div class="flex items-center justify-center space-x-4 rtl:space-x-reverse">
+                                    <Link :href="route('school.teachers.attendance.show', teacher.id)" class="text-gray-500 hover:text-green-600" title="عرض سجل الحضور">
+                                        <i class="fas fa-calendar-alt"></i>
+                                    </Link>
+                                    <Link :href="route('school.teachers.attendance.sync', teacher.id)" method="post" as="button" class="text-gray-500 hover:text-blue-600" title="مزامنة حضور اليوم" preserve-scroll>
+                                        <i class="fas fa-sync-alt"></i>
+                                    </Link>
+                                    <button @click="openFingerprintModal(teacher)" class="text-gray-500 hover:text-indigo-600" title="تعديل رقم البصمة">
+                                        <i class="fas fa-fingerprint"></i>
+                                    </button>
+                                    <Link :href="route('school.teachers.show', teacher.id)" class="text-gray-500 hover:text-yellow-600" title="عرض التفاصيل">
+                                        <i class="fas fa-eye"></i>
+                                    </Link>
+                                    <Link :href="route('school.teachers.edit', teacher.id)" class="text-gray-500 hover:text-purple-600" title="تعديل">
+                                        <i class="fas fa-edit"></i>
+                                    </Link>
+                                </div>
                             </td>
                         </tr>
                         <tr v-if="teachers.data.length === 0">

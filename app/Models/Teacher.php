@@ -74,5 +74,9 @@ class Teacher extends Model
     {
         return $this->morphMany(WorkExperience::class, 'experienceable');
     }
+    public function attendances(): MorphMany
+{
+    return $this->morphMany(Attendance::class, 'attendable');
+}
 }
 

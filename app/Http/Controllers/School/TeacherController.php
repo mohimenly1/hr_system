@@ -17,6 +17,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
+use App\Services\FingerprintService;
+
 
 class TeacherController extends Controller
 {
@@ -458,6 +460,52 @@ class TeacherController extends Controller
         $teacher->update(['fingerprint_id' => $validated['fingerprint_id']]);
 
         return Redirect::back()->with('success', 'تم تحديث رقم البصمة بنجاح.');
+    }
+
+
+    public function showAttendance(Teacher $teacher)
+    {
+        // تحميل بيانات المستخدم المرتبطة بالمعلم
+        $teacher->load('user');
+
+        // جلب سجلات الحضور الخاصة بالمعلم مع ترتيبها من الأحدث للأقدم
+        $attendances = $teacher->attendances()
+                               ->orderBy('attendance_date', 'desc')
+                               ->paginate(15);
+
+        // إرسال البيانات إلى واجهة العرض
+        return Inertia::render('School/Teachers/Attendance/Show', [
+            'teacher' => $teacher,
+            'attendances' => $attendances,
+        ]);
+    }
+
+    /**
+     * Sync today's attendance for a single teacher from the fingerprint device.
+     * مزامنة حضور اليوم لمعلم واحد من جهاز البصمة
+     */
+    public function syncSingleAttendance(Teacher $teacher, FingerprintService $fingerprintService)
+    {
+        if (!$teacher->fingerprint_id) {
+            return back()->with('error', 'هذا المعلم لا يملك رقم بصمة.');
+        }
+
+        try {
+            // استدعاء الخدمة لمزامنة مستخدم واحد فقط
+            $result = $fingerprintService->syncSingleUser(
+                $teacher->fingerprint_id,
+                now()->toDateString()
+            );
+
+            if ($result) {
+                return back()->with('success', 'تمت مزامنة حضور المعلم بنجاح.');
+            } else {
+                return back()->with('info', 'لا توجد سجلات بصمة جديدة للمعلم اليوم.');
+            }
+        } catch (\Exception $e) {
+            // في حال حدوث أي خطأ
+            return back()->with('error', 'حدث خطأ أثناء الاتصال بالجهاز: ' . $e->getMessage());
+        }
     }
 }
 
