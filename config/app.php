@@ -15,6 +15,10 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    'fingerprint_device_ip' => env('FINGERPRINT_DEVICE_IP'),
+    'fingerprint_device_port' => env('FINGERPRINT_DEVICE_PORT', 4370),
+    'fingerprint_device_comm_key' => env('FINGERPRINT_DEVICE_COMM_KEY', 0),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

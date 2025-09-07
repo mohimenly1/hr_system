@@ -8,6 +8,7 @@ use App\Models\Leave;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Log;
 
 class LeaveController extends Controller
 {
@@ -55,16 +56,29 @@ class LeaveController extends Controller
 
         return Redirect::route('hr.leaves.index')->with('success', 'تم تسجيل طلب الإجازة بنجاح.');
     }
-    public function update(Request $request, Leave $leave)
+    public function update(Request $request, Leave $leaf)
     {
-        $request->validate([
+        Log::info("Attempting to update leave request ID: {$leaf->id}");
+        Log::info("Incoming data:", $request->all());
+
+        $validated = $request->validate([
             'status' => 'required|in:approved,rejected',
         ]);
+        
+        Log::info("Validation passed. New status will be: {$validated['status']}");
 
-        $leave->update([
-            'status' => $request->status,
-            'approved_by' => auth()->id(), // Record who took the action
-        ]);
+        try {
+            $leaf->update([
+                'status' => $validated['status'],
+                'approved_by' => auth()->id(), // Record who took the action
+            ]);
+
+            Log::info("Successfully updated leave ID: {$leaf->id}");
+
+        } catch (\Exception $e) {
+            Log::error("Failed to update leave ID: {$leaf->id}. Error: " . $e->getMessage());
+            return Redirect::back()->with('error', 'حدث خطأ فني أثناء تحديث الطلب.');
+        }
 
         return Redirect::back()->with('success', 'تم تحديث حالة الطلب بنجاح.');
     }

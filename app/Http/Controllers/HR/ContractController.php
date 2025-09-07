@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Contract;
 use App\Models\Employee;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 use Illuminate\Support\Facades\Redirect;
+use Inertia\Inertia;
 
 class ContractController extends Controller
 {
@@ -19,44 +19,61 @@ class ContractController extends Controller
         ]);
     }
 
-    public function create()
-    {
-        // Eager load the 'user' relationship to display employee names
-        $employees = Employee::with('user')->get()->map(function ($employee) {
-            return [
-                'id' => $employee->id,
-                'name' => $employee->user->name,
-            ];
-        });
-
-        return Inertia::render('HR/Contracts/Create', [
-            'employees' => $employees,
-        ]);
-    }
-
+    /**
+     * Store a newly created contract for an employee.
+     */
     public function store(Request $request)
     {
-        $request->validate([
+        $validatedData = $request->validate([
             'employee_id' => 'required|exists:employees,id',
             'contract_type' => 'required|string|max:255',
             'start_date' => 'required|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'probation_end_date' => 'nullable|date|after_or_equal:start_date',
             'job_title' => 'required|string|max:255',
-            'status' => 'required|in:active,pending,expired,terminated',
             'basic_salary' => 'required|numeric|min:0',
             'housing_allowance' => 'nullable|numeric|min:0',
             'transportation_allowance' => 'nullable|numeric|min:0',
             'other_allowances' => 'nullable|numeric|min:0',
-            'working_hours_per_day' => 'nullable|integer|min:1',
-            'annual_leave_days' => 'nullable|integer|min:0',
-            'notice_period_days' => 'nullable|integer|min:0',
-            'notes' => 'nullable|string',
+            'status' => 'required|in:active,pending,expired,terminated',
         ]);
 
-        Contract::create($request->all());
+        Contract::create($validatedData);
 
-        return Redirect::route('hr.contracts.index')->with('success', 'تم إنشاء العقد بنجاح.');
+        return Redirect::back()->with('success', 'تمت إضافة العقد الجديد بنجاح.');
+    }
+
+    /**
+     * Update the specified contract.
+     */
+    public function update(Request $request, Contract $contract)
+    {
+        $validatedData = $request->validate([
+            'contract_type' => 'required|string|max:255',
+            'start_date' => 'required|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'job_title' => 'required|string|max:255',
+            'basic_salary' => 'required|numeric|min:0',
+            'housing_allowance' => 'nullable|numeric|min:0',
+            'transportation_allowance' => 'nullable|numeric|min:0',
+            'other_allowances' => 'nullable|numeric|min:0',
+            'status' => 'required|in:active,pending,expired,terminated',
+        ]);
+
+        $contract->update($validatedData);
+
+        return Redirect::back()->with('success', 'تم تحديث بيانات العقد بنجاح.');
+    }
+    
+    /**
+     * Update only the status of a contract.
+     */
+    public function updateStatus(Request $request, Contract $contract)
+    {
+        $request->validate(['status' => 'required|in:active,expired,terminated']);
+        
+        $contract->update(['status' => $request->status]);
+
+        return Redirect::back()->with('success', 'تم تحديث حالة العقد بنجاح.');
     }
 }
 

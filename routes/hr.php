@@ -8,19 +8,24 @@ use App\Http\Controllers\HR\LeaveController;
 use App\Http\Controllers\HR\AttendanceController;
 use App\Http\Controllers\HR\RoleController;
 use App\Http\Controllers\HR\UserController;
+use App\Http\Controllers\HR\FingerprintDeviceController;
 
 // A dedicated route group for all HR features, protected by auth middleware.
 Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(function () {
     
     // --- Employee Management ---
-    // Handles index, create, store, show, edit, update for employees.
     Route::resource('employees', EmployeeController::class);
-    // Custom route for adding attachments to a specific employee.
     Route::post('employees/{employee}/attachments', [EmployeeController::class, 'storeAttachment'])->name('employees.attachments.store');
+    Route::post('employees/{employee}/leaves', [EmployeeController::class, 'storeLeave'])->name('employees.leaves.store');
+    Route::post('employees/{employee}/experiences', [EmployeeController::class, 'storeWorkExperience'])->name('employees.experiences.store');
+    Route::put('employees/{employee}/experiences/{experience}', [EmployeeController::class, 'updateWorkExperience'])->name('employees.experiences.update');
+    Route::delete('employees/{employee}/experiences/{experience}', [EmployeeController::class, 'destroyWorkExperience'])->name('employees.experiences.destroy');
+    Route::put('employees/{employee}/personal-info', [EmployeeController::class, 'updatePersonalInfo'])->name('employees.personal-info.update');
+    Route::put('employees/{employee}/fingerprint', [EmployeeController::class, 'updateFingerprintId'])->name('employees.fingerprint.update');
+    // --- Contract Management (Now a full resource controller) ---
+    Route::resource('contracts', ContractController::class)->except(['create', 'show', 'edit']);
+    Route::put('contracts/{contract}/status', [ContractController::class, 'updateStatus'])->name('contracts.status.update');
 
-    // --- Contract Management ---
-    // Since contracts are created with employees, we only need an index to view all contracts.
-    Route::get('contracts', [ContractController::class, 'index'])->name('contracts.index');
 
     // --- Payroll Management ---
     Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
@@ -30,8 +35,6 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
 
     // --- Leave Management ---
     Route::resource('leaves', LeaveController::class);
-    Route::post('leaves/{leave}/approve', [LeaveController::class, 'approve'])->name('leaves.approve');
-    Route::post('leaves/{leave}/reject', [LeaveController::class, 'reject'])->name('leaves.reject');
 
     // --- Attendance Management ---
     Route::resource('attendances', AttendanceController::class);
@@ -43,6 +46,15 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
     Route::get('users', [UserController::class, 'index'])->name('users.index');
     Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
     Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+        // --- Fingerprint Device Integration ---
+        Route::get('fingerprint', [FingerprintDeviceController::class, 'index'])->name('fingerprint.index');
+        Route::get('fingerprint/test-connection', [FingerprintDeviceController::class, 'testConnection'])->name('fingerprint.test');
+        Route::post('fingerprint/sync-attendance', [FingerprintDeviceController::class, 'syncAttendance'])->name('fingerprint.sync.attendance');
+        Route::post('fingerprint/sync-users', [FingerprintDeviceController::class, 'syncUsersToDevice'])->name('fingerprint.sync.users');
+        Route::get('fingerprint/device-users', [FingerprintDeviceController::class, 'getDeviceUsers'])->name('fingerprint.device.users');
+        Route::delete('fingerprint/clear-users', [FingerprintDeviceController::class, 'clearDeviceUsers'])->name('fingerprint.clear.users');
+        Route::post('/fingerprint/sync-monthly', [FingerprintDeviceController::class, 'syncMonthly'])->name('fingerprint.sync.monthly');
+
 
 });
 

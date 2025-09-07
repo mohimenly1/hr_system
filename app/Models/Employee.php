@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany; // --- IMPORT THIS ---
+
 
 class Employee extends Model
 {
@@ -22,6 +24,14 @@ class Employee extends Model
         'date_of_birth',
         'gender',
         'employment_status',
+              // --- NEW FILLABLE FIELDS ---
+              'middle_name',
+              'last_name',
+              'mother_name',
+              'marital_status',
+              'nationality',
+              'national_id_number',
+              'fingerprint_id', // --- ADDED ---
     ];
 
     /**
@@ -47,8 +57,20 @@ class Employee extends Model
        /**
      * Get all attachments for the employee.
      */
-    public function attachments(): HasMany
+    public function attachments(): MorphMany
     {
-        return $this->hasMany(Attachment::class);
+        return $this->morphMany(Attachment::class, 'attachable');
+    }
+
+    public function leaves(): MorphMany
+    {
+        return $this->morphMany(Leave::class, 'leavable');
+    }
+      /**
+     * Get all of the work experiences for the employee.
+     */
+    public function workExperiences(): MorphMany
+    {
+        return $this->morphMany(WorkExperience::class, 'experienceable');
     }
 }

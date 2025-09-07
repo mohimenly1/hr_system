@@ -23,8 +23,13 @@ class Teacher extends Model
         'specialization',
         'hire_date',
         'employment_status',
-        'emergency_contact_name',
-        'emergency_contact_phone',
+        // --- NEW FILLABLE FIELDS ---
+        'middle_name',
+        'last_name',
+        'mother_name',
+        'nationality',
+        'national_id_number',
+        'fingerprint_id', // --- ADDED ---
     ];
 
     public function user(): BelongsTo
@@ -42,27 +47,32 @@ class Teacher extends Model
         return $this->hasMany(TeacherContract::class);
     }
     
-    /**
-     * Get all of the assignments for the Teacher.
-     */
     public function assignments(): HasMany
     {
         return $this->hasMany(TeacherAssignment::class);
     }
+    public function leaves(): MorphMany
+    {
+        return $this->morphMany(Leave::class, 'leavable');
+    }
 
-    // This is a convenient way to get all subjects a teacher teaches,
-    // but the `assignments` relationship is more precise.
     public function subjects()
     {
         return $this->belongsToMany(Subject::class, 'teacher_assignments');
     }
 
-        /**
-     * Get all of the teacher's attachments.
-     */
     public function attachments(): MorphMany
     {
         return $this->morphMany(Attachment::class, 'attachable');
+    }
+    
+    /**
+     * Get all of the work experiences for the teacher.
+     * This is now a polymorphic relationship.
+     */
+    public function workExperiences(): MorphMany
+    {
+        return $this->morphMany(WorkExperience::class, 'experienceable');
     }
 }
 

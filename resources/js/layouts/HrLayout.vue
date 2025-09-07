@@ -119,6 +119,17 @@ const toggleSettingsMenu = () => {
                             <span class="ml-3">الأدوار والصلاحيات</span>
                         </Link>
                     </div>
+
+                    <!-- Add this inside the <nav> tag, perhaps in a new "Integrations" section -->
+<div class="px-4 mt-6">
+    <div class="border-t border-gray-700"></div>
+    <p class="mt-4 text-xs uppercase text-gray-400 tracking-wider">التكاملات</p>
+</div>
+<Link :href="route('hr.fingerprint.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/Fingerprint') }" class="block px-4 py-3 hover:bg-gray-700 transition duration-200">
+    <i class="fas fa-fingerprint mr-2 w-5 text-center"></i> جهاز البصمة
+</Link>
+
+
                 </div>
             </nav>
         </aside>
