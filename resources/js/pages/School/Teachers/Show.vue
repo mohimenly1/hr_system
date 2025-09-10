@@ -1,13 +1,22 @@
 <script setup>
 import HrLayout from '../../../layouts/HrLayout.vue';
-import { Head, Link, useForm, router } from '@inertiajs/vue3';
+import { Head, Link, useForm, router,usePage } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 
 const props = defineProps({
     teacher: Object,
     grades: Array,
+    departments: Array, // <-- استقبال قائمة الأقسام
+    leaveTypes: Array,
+    leaveBalances: Array,
 });
 
+
+const page = usePage();
+const authUser = computed(() => page.props.auth.user);
+const canManage = computed(() => {
+    return authUser.value.roles.includes('admin') || authUser.value.roles.includes('hr-manager');
+});
 // --- State for inline editing personal info ---
 const isEditingPersonalInfo = ref(false);
 
@@ -25,6 +34,7 @@ const personalInfoForm = useForm({
     user: { name: props.teacher.user.name, email: props.teacher.user.email },
     middle_name: props.teacher.middle_name,
     last_name: props.teacher.last_name,
+    department_id: props.teacher.department_id,
     mother_name: props.teacher.mother_name,
     marital_status: props.teacher.marital_status,
     nationality: props.teacher.nationality,
@@ -37,7 +47,7 @@ const personalInfoForm = useForm({
 const contractForm = useForm({ id: null, teacher_id: props.teacher.id, contract_type: 'monthly', start_date: '', end_date: '', salary_type: 'monthly', salary_amount: null, hourly_rate: null, working_hours_per_week: null, notes: '', status: 'active' });
 const assignmentsForm = useForm({ assignments: props.teacher.assignments.map(a => ({ subject_id: a.subject_id, section_id: a.section_id })) });
 const attachmentForm = useForm({ attachment_name: '', attachment_file: null });
-const leaveForm = useForm({ leave_type: 'إجازة سنوية', start_date: '', end_date: '', reason: '' });
+const leaveForm = useForm({ leave_type_id: null, start_date: '', end_date: '', reason: '' });
 const experienceForm = useForm({ id: null, company_name: '', job_title: '', start_date: '', end_date: '', description: '' });
 
 // --- State helpers ---
@@ -53,7 +63,7 @@ const newContractStatusToUpdate = ref('');
 const contractActionText = ref('');
 const selectedGradeIds = ref([]);
 
-const leaveTypes = ['إجازة سنوية', 'إجازة مرضية', 'إجازة عارضة', 'إجازة بدون راتب', 'أخرى'];
+
 
 // --- Helper functions ---
 const getStatusClass = (status) => {
@@ -198,9 +208,9 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                     </div>
                 </div>
                 <div>
-                    <h2 class="text-2xl font-bold text-gray-800">{{ teacher.user.name }} {{ teacher.middle_name }} {{ teacher.last_name }}</h2>
+                    <h2 class="text-2xl font-bold text-gray-800">{{ teacher.user.full_name }}</h2>
                     <p class="text-lg text-gray-600">{{ teacher.specialization }}</p>
-                    <p class="text-sm text-gray-500">{{ teacher.department.name }}</p>
+                    <p class="text-sm text-gray-500">{{ teacher.department ? teacher.department.name : 'غير محدد' }}</p>
                     <span class="mt-2 inline-block px-3 py-1 text-sm font-semibold leading-5 rounded-full" :class="getStatusClass(teacher.employment_status)">
                         {{ teacher.employment_status === 'active' ? 'نشط' : 'غير نشط' }}
                     </span>
@@ -210,16 +220,18 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Left Column -->
                 <div class="lg:col-span-1 space-y-6">
-                    <!-- Personal Info (Editable) -->
-                    <div class="bg-white shadow-md rounded-lg p-6">
+
+                       <!-- Personal Info (Editable) -->
+                       <div class="bg-white shadow-md rounded-lg p-6">
                         <div class="flex justify-between items-center border-b pb-2 mb-4">
                             <h3 class="text-lg font-bold text-gray-800">المعلومات الشخصية</h3>
-                            <div v-if="!isEditingPersonalInfo">
+                            <div v-if="!isEditingPersonalInfo && canManage">
                                 <button @click="isEditingPersonalInfo = true" class="text-blue-600 hover:text-blue-800" title="تعديل"><i class="fas fa-edit"></i></button>
                             </div>
                         </div>
                         <div v-if="!isEditingPersonalInfo" class="space-y-2 text-sm text-gray-700">
-                             <p><strong class="font-semibold text-gray-900">الاسم الكامل:</strong> {{ teacher.user.name }} {{ teacher.middle_name }} {{ teacher.last_name }}</p>
+                             <p><strong class="font-semibold text-gray-900">الاسم الكامل:</strong> {{ teacher.user.full_name }}</p>
+                             <p><strong class="font-semibold text-gray-900">القسم:</strong> {{ teacher.department ? teacher.department.name : '-' }}</p>
                              <p><strong class="font-semibold text-gray-900">اسم الأم:</strong> {{ teacher.mother_name || '-' }}</p>
                              <p><strong class="font-semibold text-gray-900">الجنسية:</strong> {{ teacher.nationality || '-' }}</p>
                              <p><strong class="font-semibold text-gray-900">رقم الهوية:</strong> {{ teacher.national_id_number || '-' }}</p>
@@ -235,27 +247,15 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                                 <div><label class="font-semibold">الاسم الأول*</label><input type="text" v-model="personalInfoForm.user.name" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
                                 <div><label class="font-semibold">الاسم الأوسط</label><input type="text" v-model="personalInfoForm.middle_name" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
                                 <div><label class="font-semibold">الاسم الأخير</label><input type="text" v-model="personalInfoForm.last_name" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
+                                <div><label class="font-semibold">القسم*</label><select v-model="personalInfoForm.department_id" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"><option v-for="dept in departments" :key="dept.id" :value="dept.id">{{ dept.name }}</option></select></div>
                                 <div><label class="font-semibold">اسم الأم</label><input type="text" v-model="personalInfoForm.mother_name" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
                                 <div><label class="font-semibold">الجنسية</label><input type="text" v-model="personalInfoForm.nationality" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
                                 <div><label class="font-semibold">رقم الهوية</label><input type="text" v-model="personalInfoForm.national_id_number" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
                                 <div><label class="font-semibold">تاريخ الميلاد</label><input type="date" v-model="personalInfoForm.date_of_birth" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
-                                <div>
-                                    <label class="font-semibold">الحالة الاجتماعية</label>
-                                    <select v-model="personalInfoForm.marital_status" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2">
-                                        <option value="أعزب">أعزب</option> <option value="متزوج">متزوج</option> <option value="مطلق">مطلق</option> <option value="أرمل">أرمل</option>
-                                    </select>
-                                </div>
-                                 <div>
-                                    <label class="font-semibold">الجنس</label>
-                                     <select v-model="personalInfoForm.gender" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2">
-                                        <option value="male">ذكر</option> <option value="female">أنثى</option>
-                                    </select>
-                                </div>
-                                 <div>
-                                    <label class="font-semibold">البريد الإلكتروني*</label>
-                                    <input type="email" v-model="personalInfoForm.user.email" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2">
-                                </div>
-                                 <div class="sm:col-span-2"><label class="font-semibold">رقم الهاتف</label><input type="tel" v-model="personalInfoForm.phone_number" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
+                                <div><label class="font-semibold">الحالة الاجتماعية</label><select v-model="personalInfoForm.marital_status" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"><option value="أعزب">أعزب</option> <option value="متزوج">متزوج</option> <option value="مطلق">مطلق</option> <option value="أرمل">أرمل</option></select></div>
+                                <div><label class="font-semibold">الجنس</label><select v-model="personalInfoForm.gender" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"><option value="male">ذكر</option> <option value="female">أنثى</option></select></div>
+                                <div class="sm:col-span-2"><label class="font-semibold">البريد الإلكتروني*</label><input type="email" v-model="personalInfoForm.user.email" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
+                                <div class="sm:col-span-2"><label class="font-semibold">رقم الهاتف</label><input type="tel" v-model="personalInfoForm.phone_number" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></div>
                                 <div class="sm:col-span-2"><label class="font-semibold">العنوان</label><textarea v-model="personalInfoForm.address" rows="3" class="mt-1 bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2"></textarea></div>
                             </div>
                             <div class="flex justify-end space-x-2 rtl:space-x-reverse border-t pt-4 mt-4">
@@ -264,6 +264,22 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                             </div>
                         </form>
                     </div>
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">أرصدة الإجازات</h3>
+                        <div v-if="leaveBalances.length > 0" class="space-y-4">
+                            <div v-for="balance in leaveBalances" :key="balance.name">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-sm font-medium text-gray-700">{{ balance.name }}</span>
+                                    <span class="text-sm font-bold text-gray-800">{{ balance.available }} / {{ balance.total }} يوم</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div class="bg-indigo-600 h-2.5 rounded-full" :style="{ width: (balance.used / balance.total * 100) + '%' }"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <p v-else class="text-sm text-center text-gray-500 py-4">لم يتم تعريف أنواع إجازات بعد.</p>
+                    </div>
+                 
                     <!-- Attachments -->
                     <div class="bg-white shadow-md rounded-lg p-6">
                         <div class="flex justify-between items-center border-b pb-2 mb-4">
@@ -387,39 +403,23 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                     <div class="bg-white shadow-md rounded-lg p-6">
                         <div class="flex justify-between items-center border-b pb-2 mb-4">
                             <h3 class="text-lg font-bold text-gray-800">سجل الإجازات</h3>
-                            <button @click="showAddLeaveModal = true" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-indigo-200">
-                                <i class="fas fa-plus"></i> إضافة إجازة
-                            </button>
+                            <button v-if="canManage" @click="showAddLeaveModal = true" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-indigo-200"><i class="fas fa-plus"></i> إضافة إجازة</button>
                         </div>
                         <div v-if="teacher.leaves && teacher.leaves.length > 0" class="overflow-x-auto">
                            <table class="min-w-full text-sm">
                                <thead class="bg-gray-50">
                                    <tr>
-                                       <th class="text-right p-2 font-semibold text-gray-600">النوع</th>
-                                       <th class="text-right p-2 font-semibold text-gray-600">من</th>
-                                       <th class="text-right p-2 font-semibold text-gray-600">إلى</th>
-                                       <th class="text-right p-2 font-semibold text-gray-600">الحالة</th>
-                                       <th class="text-center p-2 font-semibold text-gray-600">الإجراءات</th>
+                                       <th class="text-right p-2 font-semibold text-gray-600">النوع</th><th class="text-right p-2 font-semibold text-gray-600">من</th><th class="text-right p-2 font-semibold text-gray-600">إلى</th><th class="text-right p-2 font-semibold text-gray-600">الحالة</th><th class="text-center p-2 font-semibold text-gray-600">الإجراءات</th>
                                    </tr>
                                </thead>
                                <tbody class="text-gray-700">
                                    <tr v-for="leave in teacher.leaves" :key="leave.id" class="border-b">
-                                       <td class="p-2">{{ leave.leave_type }}</td>
-                                       <td class="p-2">{{ displayFormatDate(leave.start_date) }}</td>
-                                       <td class="p-2">{{ displayFormatDate(leave.end_date) }}</td>
-                                       <td class="p-2">
-                                           <span class="px-2 py-1 text-xs font-semibold leading-5 rounded-full" :class="getStatusClass(leave.status)">
-                                               {{ getStatusText(leave.status) }}
-                                           </span>
-                                       </td>
+                                       <td class="p-2">{{ leave.leave_type ? leave.leave_type.name : leave.leave_type }}</td><td class="p-2">{{ displayFormatDate(leave.start_date) }}</td><td class="p-2">{{ displayFormatDate(leave.end_date) }}</td>
+                                       <td class="p-2"><span class="px-2 py-1 text-xs font-semibold leading-5 rounded-full" :class="getStatusClass(leave.status)">{{ getStatusText(leave.status) }}</span></td>
                                        <td class="p-2 text-center">
-                                           <div v-if="leave.status === 'pending'" class="flex justify-center items-center space-x-2 rtl:space-x-reverse">
-                                                <button @click="openLeaveActionModal(leave, 'approved')" :disabled="isProcessingLeaveAction" class="text-green-600 hover:text-green-800" title="موافقة">
-                                                    <i class="fas fa-check-circle"></i>
-                                                </button>
-                                                <button @click="openLeaveActionModal(leave, 'rejected')" :disabled="isProcessingLeaveAction" class="text-red-600 hover:text-red-800" title="رفض">
-                                                    <i class="fas fa-times-circle"></i>
-                                                </button>
+                                           <div v-if="leave.status === 'pending' && canManage" class="flex justify-center items-center space-x-2 rtl:space-x-reverse">
+                                                <button @click="openLeaveActionModal(leave, 'approved')" :disabled="isProcessingLeaveAction" class="text-green-600 hover:text-green-800" title="موافقة"><i class="fas fa-check-circle"></i></button>
+                                                <button @click="openLeaveActionModal(leave, 'rejected')" :disabled="isProcessingLeaveAction" class="text-red-600 hover:text-red-800" title="رفض"><i class="fas fa-times-circle"></i></button>
                                             </div>
                                             <span v-else class="text-gray-400 text-xs">تم اتخاذ إجراء</span>
                                        </td>
@@ -573,14 +573,24 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
             </div>
         </div>
         <!-- Add Leave Modal -->
-        <div v-if="showAddLeaveModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-            <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+     <!-- Add Leave Modal -->
+     <div v-if="showAddLeaveModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
                 <div class="flex justify-between items-center border-b pb-3"><h3 class="text-xl font-bold text-gray-800">إضافة طلب إجازة</h3><button @click="showAddLeaveModal = false" class="text-gray-500 hover:text-gray-800">&times;</button></div>
                 <form @submit.prevent="submitLeave" class="mt-4 space-y-4">
-                    <div><label class="block mb-2 text-sm font-medium text-gray-900">نوع الإجازة</label><select v-model="leaveForm.leave_type" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required><option v-for="type in leaveTypes" :key="type" :value="type">{{ type }}</option></select></div>
-                    <div><label class="block mb-2 text-sm font-medium text-gray-900">تاريخ البدء</label><input type="date" v-model="leaveForm.start_date" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required></div>
-                    <div><label class="block mb-2 text-sm font-medium text-gray-900">تاريخ الانتهاء</label><input type="date" v-model="leaveForm.end_date" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required></div>
-                    <div><label class="block mb-2 text-sm font-medium text-gray-900">السبب</label><textarea rows="3" v-model="leaveForm.reason" class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300" required></textarea></div>
+                    <div>
+                        
+                        <label class="block mb-2 text-sm font-medium text-gray-900">نوع الإجازة*</label>
+                        <select v-model="leaveForm.leave_type_id" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required>
+                            <option :value="null" disabled>-- اختر نوع الإجازة --</option>
+                            <option v-for="type in leaveTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
+                        </select>
+                        <div v-if="leaveForm.errors.leave_type_id" class="text-sm text-red-600 mt-1">{{ leaveForm.errors.leave_type_id }}</div>
+                    </div>
+                    <div><label class="block mb-2 text-sm font-medium text-gray-900">تاريخ البدء*</label><input type="date" v-model="leaveForm.start_date" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required></div>
+                    <div><label class="block mb-2 text-sm font-medium text-gray-900">تاريخ الانتهاء*</label><input type="date" v-model="leaveForm.end_date" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required></div>
+                    <div v-if="leaveForm.errors.end_date" class="text-sm text-red-600 -mt-2 mb-2">{{ leaveForm.errors.end_date }}</div>
+                    <div><label class="block mb-2 text-sm font-medium text-gray-900">السبب*</label><textarea rows="3" v-model="leaveForm.reason" class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300" required></textarea></div>
                     <div class="flex justify-end pt-4 border-t space-x-2 rtl:space-x-reverse"><button type="button" @click="showAddLeaveModal = false" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">إلغاء</button><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700" :disabled="leaveForm.processing">حفظ</button></div>
                 </form>
             </div>

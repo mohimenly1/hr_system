@@ -88,12 +88,21 @@ public function constraints(): MorphMany
     {
         return $this->morphMany(SchedulingConstraint::class, 'schedulable');
     }
-    
+
 public function setPersonnelType($type, $modelClass)
 {
     $this->personnel_type = $type;
     $this->model_class = $modelClass;
     return $this;
+}
+
+
+/**
+ * Get all departments managed by the teacher (if any).
+ */
+public function managedDepartments(): HasMany
+{
+    return $this->hasMany(Department::class, 'manager_id', 'user_id');
 }
 
 }

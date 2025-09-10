@@ -18,41 +18,95 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use App\Models\WorkExperience;
 use App\Services\FingerprintService; // سنفترض وجود خدمة لسحب البصمة
+use Illuminate\Support\Facades\Auth; // <-- إضافة مهمة
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use App\Models\LeaveType;
+use App\Services\LeaveBalanceService;
+use Illuminate\Validation\ValidationException;
 
 
 class EmployeeController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    use AuthorizesRequests;
+    public function index(Request $request)
     {
-        $employees = Employee::with(['user', 'department'])->latest()->paginate(10);
+        $this->authorize('viewAny', Employee::class);
+
+        $filters = $request->only('search', 'department_id');
+        $user = Auth::user();
+
+        $employeesQuery = Employee::with([
+                'user.roles:id,name', 
+                'department:id,name',
+                'managedDepartments:id,name,manager_id' // <-- جلب الأقسام التي يديرها
+            ])
+            ->when($request->input('search'), function ($query, $search) {
+                $query->whereHas('user', function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->input('department_id'), function ($query, $departmentId) {
+                $query->where('department_id', $departmentId);
+            });
+
+        
+        $departmentsForFilter = collect();
+
+        if ($user->hasRole('department-manager')) {
+            $managedDepartmentIds = Department::where('manager_id', $user->id)->pluck('id');
+            if ($managedDepartmentIds->isNotEmpty()) {
+                $employeesQuery->whereIn('department_id', $managedDepartmentIds);
+                // مدير القسم سيرى فقط الأقسام التي يديرها في الفلتر
+                $departmentsForFilter = Department::whereIn('id', $managedDepartmentIds)->get(['id', 'name']);
+            } else {
+                $employeesQuery->whereRaw('1 = 0'); 
+            }
+        } else {
+            // الأدوار الأخرى سترى كل الأقسام
+            $departmentsForFilter = Department::all(['id', 'name']);
+        }
+        
+        $employees = $employeesQuery->latest()->paginate(10)->withQueryString();
+
         return Inertia::render('HR/Employees/Index', [
             'employees' => $employees,
+            'filters' => $filters,
+            'departments' => $departmentsForFilter,
         ]);
     }
-
     /**
      * Show the form for creating a new resource.
      */
 
-     public function show(Employee $employee)
+     public function show(Employee $employee, LeaveBalanceService $leaveBalanceService)
      {
-         // Eager load all necessary relationships for the profile view
-         $employee->load(['user', 'department', 'contracts', 'attachments', 'leaves', 'workExperiences']);
- 
-         // Add a downloadable URL to each attachment
+         $this->authorize('view', $employee);
+         
+         $employee->load([
+             'user.roles', 
+             'department', 
+             'contracts', 
+             'attachments', 
+             'leaves.leaveType', // <-- تحديث لتحميل نوع الإجازة الجديد
+             'workExperiences',
+             'managedDepartments:id,name,manager_id'
+         ]);
+  
          $employee->attachments->each(function ($attachment) {
              $attachment->url = Storage::url($attachment->file_path);
          });
- 
+  
          return Inertia::render('HR/Employees/Show', [
-             'employee' => $employee
+             'employee' => $employee,
+             'departments' => Department::all(['id', 'name']),
+             'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
+             'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($employee),
          ]);
      }
     public function create()
     {
+        $this->authorize('create', Employee::class);
         $departments = Department::all(['id', 'name']);
         return Inertia::render('HR/Employees/Create', [
             'departments' => $departments,
@@ -64,6 +118,7 @@ class EmployeeController extends Controller
      */
     public function store(Request $request)
     {
+        $this->authorize('create', Employee::class);
         // Note: Full validation rules from your example are assumed here for brevity
         $validatedData = $request->validate([
             'personal.middle_name' => 'nullable|string|max:255',
@@ -163,6 +218,7 @@ class EmployeeController extends Controller
 
     public function storeAttachment(Request $request, Employee $employee)
     {
+        $this->authorize('create', Employee::class);
         $request->validate([
             'attachment_name' => 'required|string|max:255',
             'attachment_file' => 'required|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
@@ -183,6 +239,7 @@ class EmployeeController extends Controller
 
     public function edit(Employee $employee)
     {
+        $this->authorize('update', $employee);
         $employee->load(['user', 'department', 'contracts' => fn($q) => $q->latest()->limit(1), 'workExperiences']);
         $departments = Department::all(['id', 'name']);
         
@@ -197,6 +254,7 @@ class EmployeeController extends Controller
      */
     public function update(Request $request, Employee $employee)
     {
+        $this->authorize('update', $employee);
         $validatedData = $request->validate([
             // Personal Info
             'personal.middle_name' => 'nullable|string|max:255',
@@ -291,28 +349,37 @@ class EmployeeController extends Controller
         return Redirect::route('hr.employees.index')->with('success', 'تم تحديث بيانات الموظف بنجاح.');
     }
 
-    public function storeLeave(Request $request, Employee $employee)
+    public function storeLeave(Request $request, Employee $employee, LeaveBalanceService $leaveBalanceService)
     {
-        $request->validate([
-            'leave_type' => 'required|string|max:255',
+        $this->authorize('update', $employee);
+        
+        $validated = $request->validate([
+            'leave_type_id' => 'required|exists:leave_types,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'reason' => 'required|string',
         ]);
 
-        $employee->leaves()->create([
-            'leave_type' => $request->leave_type,
-            'start_date' => $request->start_date,
-            'end_date' => $request->end_date,
-            'reason' => $request->reason,
-            'status' => 'pending', // Default status
-        ]);
+        $leaveType = LeaveType::find($validated['leave_type_id']);
+        $requestedDuration = $leaveBalanceService->calculateLeaveDuration($validated['start_date'], $validated['end_date']);
+        $availableBalance = $leaveBalanceService->getAvailableBalance($employee, $leaveType);
+
+        // التحقق من الرصيد
+        if ($requestedDuration > $availableBalance) {
+            // إرجاع خطأ محدد للواجهة
+            throw ValidationException::withMessages([
+                'end_date' => "الرصيد المتاح لهذا النوع من الإجازات هو {$availableBalance} يوم فقط.",
+            ]);
+        }
+
+        $employee->leaves()->create($validated);
 
         return Redirect::back()->with('success', 'تم تسجيل طلب الإجازة للموظف بنجاح.');
     }
 
     public function storeWorkExperience(Request $request, Employee $employee)
     {
+        $this->authorize('create', Employee::class);
         $request->validate([
             'company_name' => 'required|string|max:255',
             'job_title' => 'required|string|max:255',
@@ -329,9 +396,13 @@ class EmployeeController extends Controller
 
     public function updateWorkExperience(Request $request, Employee $employee, WorkExperience $experience)
     {
-        if ($experience->employee_id !== $employee->id) {
-            abort(403);
+        $this->authorize('update', $employee);
+
+        // --- THE FIX: Correct ownership check for polymorphic relationship ---
+        if ($experience->experienceable_id !== $employee->id || $experience->experienceable_type !== Employee::class) {
+            abort(403, 'This work experience does not belong to the specified employee.');
         }
+
         $validatedData = $request->validate([
             'company_name' => 'required|string|max:255',
             'job_title' => 'required|string|max:255',
@@ -349,6 +420,7 @@ class EmployeeController extends Controller
      */
     public function destroyWorkExperience(Employee $employee, WorkExperience $experience)
     {
+        $this->authorize('delete', $employee);
         if ($experience->employee_id !== $employee->id) {
             abort(403);
         }
@@ -362,11 +434,13 @@ class EmployeeController extends Controller
      */
     public function updatePersonalInfo(Request $request, Employee $employee)
     {
+        $this->authorize('update', $employee);
         $validatedData = $request->validate([
             'user.name' => 'required|string|max:255',
             'user.email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($employee->user_id)],
             'middle_name' => 'nullable|string|max:255',
             'last_name' => 'nullable|string|max:255',
+            'department_id' => 'required|exists:departments,id', // <-- التحديث هنا
             'mother_name' => 'nullable|string|max:255',
             'marital_status' => 'nullable|string',
             'nationality' => 'nullable|string|max:255',
@@ -397,6 +471,7 @@ class EmployeeController extends Controller
 
     public function updateFingerprintId(Request $request, Employee $employee)
     {
+        $this->authorize('updateFingerprint', $employee);
         $validated = $request->validate([
             'fingerprint_id' => [
                 'required',
@@ -414,6 +489,7 @@ class EmployeeController extends Controller
 
     public function showAttendance(Employee $employee)
     {
+        $this->authorize('view', $employee);
         // تحميل بيانات المستخدم المرتبطة بالموظف
         $employee->load('user');
 
@@ -435,6 +511,7 @@ class EmployeeController extends Controller
      */
     public function syncSingleAttendance(Employee $employee, FingerprintService $fingerprintService)
     {
+        $this->authorize('create', Employee::class);
         if (!$employee->fingerprint_id) {
             return back()->with('error', 'هذا الموظف لا يملك رقم بصمة.');
         }

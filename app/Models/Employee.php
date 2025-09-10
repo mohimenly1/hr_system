@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany; // --- IMPORT THIS ---
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use App\Models\Department;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Employee extends Model
 {
@@ -92,6 +94,18 @@ public function setPersonnelType($type, $modelClass)
     $this->personnel_type = $type;
     $this->model_class = $modelClass;
     return $this;
+}
+
+
+
+/**
+ * Get the department managed by the employee (if any).
+ * The foreign key 'manager_id' on the 'departments' table
+ * is matched against the 'user_id' of this employee.
+ */
+public function managedDepartments(): HasMany
+{
+    return $this->hasMany(Department::class, 'manager_id', 'user_id');
 }
 
 }

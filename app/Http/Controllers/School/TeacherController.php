@@ -18,6 +18,11 @@ use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
 use App\Services\FingerprintService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Auth;
+use App\Models\LeaveType;
+use App\Services\LeaveBalanceService;
+use Illuminate\Validation\ValidationException;
 
 
 class TeacherController extends Controller
@@ -25,11 +30,49 @@ class TeacherController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    use AuthorizesRequests;
+    public function index(Request $request)
     {
-        $teachers = Teacher::with(['user', 'department'])->latest()->paginate(10);
+        $this->authorize('viewAny', Teacher::class);
+
+        $filters = $request->only('search', 'department_id');
+        $user = Auth::user();
+
+        $teachersQuery = Teacher::with([
+                'user.roles:id,name',
+                'department:id,name',
+                'managedDepartments:id,name,manager_id' // جلب الأقسام التي يديرها
+            ])
+            ->when($request->input('search'), function ($query, $search) {
+                $query->whereHas('user', function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->input('department_id'), function ($query, $departmentId) {
+                $query->where('department_id', $departmentId);
+            });
+
+        // فلترة النتائج تلقائياً لمدير القسم
+        $departmentsForFilter = collect();
+        if ($user->hasRole('department-manager')) {
+            $managedDepartmentIds = Department::where('manager_id', $user->id)->pluck('id');
+            if ($managedDepartmentIds->isNotEmpty()) {
+                $teachersQuery->whereIn('department_id', $managedDepartmentIds);
+                $departmentsForFilter = Department::whereIn('id', $managedDepartmentIds)->get(['id', 'name']);
+            } else {
+                $teachersQuery->whereRaw('1 = 0'); 
+            }
+        } else {
+            $departmentsForFilter = Department::all(['id', 'name']);
+        }
+        
+        $teachers = $teachersQuery->latest()->paginate(10)->withQueryString();
+
         return Inertia::render('School/Teachers/Index', [
             'teachers' => $teachers,
+            'filters' => $filters,
+            'departments' => $departmentsForFilter,
         ]);
     }
 
@@ -38,6 +81,7 @@ class TeacherController extends Controller
      */
     public function create()
     {
+        $this->authorize('create', Teacher::class);
         $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
         return Inertia::render('School/Teachers/Create', [
             'departments' => Department::all(['id', 'name']),
@@ -52,6 +96,7 @@ class TeacherController extends Controller
      */
     public function store(Request $request)
     {
+        $this->authorize('create', Teacher::class);
         $validatedData = $request->validate([
             'personal.middle_name' => 'nullable|string|max:255',
             'personal.last_name' => 'nullable|string|max:255',
@@ -160,33 +205,26 @@ class TeacherController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Teacher $teacher)
-     {
-         // Eager load all necessary relationships for the profile view
-         $teacher->load(['user', 'department', 'contracts', 'attachments', 'leaves', 'workExperiences', 'assignments.subject', 'assignments.section.grade']);
- 
-         // Add a downloadable URL to each attachment
-         $teacher->attachments->each(function ($attachment) {
-             $attachment->url = Storage::url($attachment->file_path);
-         });
- 
-         // --- THIS IS THE FIX ---
-         // Load grades for the active academic year to populate the assignments modal
-         $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
- 
-         return Inertia::render('School/Teachers/Show', [
-             'teacher' => $teacher,
-             'grades' => $activeYear ? Grade::where('academic_year_id', $activeYear->id)
-                                         ->with(['sections', 'subjects:id,name'])
-                                         ->get() : [],
-         ]);
-     }
+    public function show(Teacher $teacher, LeaveBalanceService $leaveBalanceService)
+    {
+        $this->authorize('view', $teacher);
+        
+        $teacher->load(['user.roles', 'department', 'contracts', 'attachments', 'leaves.leaveType', 'workExperiences', 'assignments.subject', 'assignments.section.grade']);
+        
+        return Inertia::render('School/Teachers/Show', [
+            'teacher' => $teacher,
+            'departments' => Department::all(['id', 'name']),
+            'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
+            'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($teacher),
+        ]);
+    }
     
     /**
      * Show the form for editing the specified resource.
      */
     public function edit(Teacher $teacher)
     {
+        $this->authorize('edit', Teacher::class);
         $teacher->load(['user', 'department', 'contracts' => fn($q) => $q->latest()->limit(1), 'assignments', 'workExperiences']);
         $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
 
@@ -204,6 +242,7 @@ class TeacherController extends Controller
      */
     public function update(Request $request, Teacher $teacher)
     {
+        $this->authorize('update', $teacher);
         $validatedData = $request->validate([
             'personal.middle_name' => 'nullable|string|max:255',
             'personal.last_name' => 'nullable|string|max:255',
@@ -311,6 +350,7 @@ class TeacherController extends Controller
      */
     public function updatePersonalInfo(Request $request, Teacher $teacher)
     {
+        $this->authorize('update', $teacher);
         $validatedData = $request->validate([
             'user.name' => 'required|string|max:255',
             'user.email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($teacher->user_id)],
@@ -323,6 +363,7 @@ class TeacherController extends Controller
             'phone_number' => 'nullable|string|max:20',
             'address' => 'nullable|string',
             'date_of_birth' => 'nullable|date',
+            'department_id' => 'required|exists:departments,id', // <-- إضافة التحقق من القسم
             'gender' => 'nullable|in:male,female',
         ]);
         
@@ -343,6 +384,7 @@ class TeacherController extends Controller
      */
     public function storeAttachment(Request $request, Teacher $teacher)
     {
+        $this->authorize('create', Teacher::class);
         $request->validate([
             'attachment_name' => 'required|string|max:255',
             'attachment_file' => 'required|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
@@ -359,27 +401,36 @@ class TeacherController extends Controller
 
         return Redirect::back()->with('success', 'تم رفع المرفق بنجاح.');
     }
-    public function storeLeave(Request $request, Teacher $teacher)
+    public function storeLeave(Request $request, Teacher $teacher, LeaveBalanceService $leaveBalanceService)
     {
-        $request->validate([
-            'leave_type' => 'required|string|max:255',
+        $this->authorize('update', $teacher);
+        
+        $validated = $request->validate([
+            'leave_type_id' => 'required|exists:leave_types,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'reason' => 'required|string',
         ]);
 
-        $teacher->leaves()->create([
-            'leave_type' => $request->leave_type,
-            'start_date' => $request->start_date,
-            'end_date' => $request->end_date,
-            'reason' => $request->reason,
-            'status' => 'pending',
-        ]);
+        $leaveType = LeaveType::find($validated['leave_type_id']);
+        $requestedDuration = $leaveBalanceService->calculateLeaveDuration($validated['start_date'], $validated['end_date']);
+        $availableBalance = $leaveBalanceService->getAvailableBalance($teacher, $leaveType);
+
+        // التحقق من الرصيد
+        if ($requestedDuration > $availableBalance) {
+            // إرجاع خطأ محدد للواجهة
+            throw ValidationException::withMessages([
+                'end_date' => "الرصيد المتاح لهذا النوع من الإجازات هو {$availableBalance} يوم فقط.",
+            ]);
+        }
+
+        $teacher->leaves()->create($validated);
 
         return Redirect::back()->with('success', 'تم تسجيل طلب الإجازة للمعلم بنجاح.');
     }
     public function storeWorkExperience(Request $request, Teacher $teacher)
     {
+        $this->authorize('create', Teacher::class);
         $request->validate([
             'company_name' => 'required|string|max:255',
             'job_title' => 'required|string|max:255',
@@ -395,6 +446,7 @@ class TeacherController extends Controller
 
     public function updateWorkExperience(Request $request, Teacher $teacher, WorkExperience $experience)
     {
+        $this->authorize('update', $teacher);
         if ($experience->experienceable_id !== $teacher->id || $experience->experienceable_type !== Teacher::class) {
             abort(403);
         }
@@ -415,6 +467,7 @@ class TeacherController extends Controller
      */
     public function destroyWorkExperience(Teacher $teacher, WorkExperience $experience)
     {
+        $this->authorize('delete', Teacher::class);
         if ($experience->experienceable_id !== $teacher->id || $experience->experienceable_type !== Teacher::class) {
             abort(403);
         }
@@ -424,6 +477,7 @@ class TeacherController extends Controller
 
     public function updateAssignments(Request $request, Teacher $teacher)
     {
+        $this->authorize('update', $teacher);
         $validatedData = $request->validate([
             'assignments' => 'present|array',
             'assignments.*.subject_id' => 'required|exists:subjects,id',
@@ -447,6 +501,8 @@ class TeacherController extends Controller
 
     public function updateFingerprintId(Request $request, Teacher $teacher)
     {
+
+        $this->authorize('updateFingerprint', $teacher);
         $validated = $request->validate([
             'fingerprint_id' => [
                 'required',
@@ -465,6 +521,8 @@ class TeacherController extends Controller
 
     public function showAttendance(Teacher $teacher)
     {
+
+        $this->authorize('create', Teacher::class);
         // تحميل بيانات المستخدم المرتبطة بالمعلم
         $teacher->load('user');
 
@@ -486,6 +544,7 @@ class TeacherController extends Controller
      */
     public function syncSingleAttendance(Teacher $teacher, FingerprintService $fingerprintService)
     {
+        $this->authorize('create', Teacher::class);
         if (!$teacher->fingerprint_id) {
             return back()->with('error', 'هذا المعلم لا يملك رقم بصمة.');
         }

@@ -5,19 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Leave extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'employee_id',
-        'leave_type',
+        'leavable_id',
+        'leavable_type',
+        'leave_type_id', // <-- الحقل الجديد
         'start_date',
         'end_date',
         'reason',
         'status',
-        'rejection_reason',
+        'leave_type', // <-- سنجعله قديماً لاحقاً
     ];
 
     protected $casts = [
@@ -25,8 +27,17 @@ class Leave extends Model
         'end_date' => 'date',
     ];
 
-    public function employee(): BelongsTo
+    public function leavable(): MorphTo
     {
-        return $this->belongsTo(Employee::class);
+        return $this->morphTo();
+    }
+
+    /**
+     * Get the type of the leave.
+     */
+    public function leaveType(): BelongsTo
+    {
+        return $this->belongsTo(LeaveType::class);
     }
 }
+

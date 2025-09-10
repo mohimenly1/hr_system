@@ -38,22 +38,30 @@ class HandleInertiaRequests extends Middleware
     {
         [$message, $author] = str(Inspiring::quotes()->random())->explode('-');
 
-        return [
-            ...parent::share($request),
+        return array_merge(parent::share($request), [
             'name' => config('app.name'),
             'quote' => ['message' => trim($message), 'author' => trim($author)],
-            'auth' => [
-                'user' => $request->user(),
-                   // Share user permissions and roles with the frontend
-                   'can' => $request->user() ? $request->user()->getAllPermissions()->pluck('name') : [],
-                   'roles' => $request->user() ? $request->user()->getRoleNames() : [],
-            ],
+
+            'auth' => function () use ($request) {
+                return [
+                    'user' => $request->user() ? [
+                        'id' => $request->user()->id,
+                        'name' => $request->user()->name,
+                        'email' => $request->user()->email,
+                        // --- التحديث الرئيسي: جلب وإرسال الصلاحيات والأدوار ---
+                        'permissions' => $request->user()->getAllPermissions()->pluck('name'),
+                        'roles' => $request->user()->getRoleNames(),
+                    ] : null,
+                ];
+            },
+            
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error'   => fn () => $request->session()->get('error'),
                 'info'    => fn () => $request->session()->get('info'),
             ],
+            
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
-        ];
+        ]);
     }
 }

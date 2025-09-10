@@ -8,7 +8,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
-class PermissionSeeder extends Seeder
+class xxPermissionSeeder extends Seeder
 {
     /**
      * Run the database seeds.

@@ -38,7 +38,7 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    protected $appends = ['is_active'];
+    protected $appends = ['is_active','full_name'];
 
     /**
      * Get the attributes that should be cast.
@@ -69,4 +69,21 @@ class User extends Authenticatable
 {
     return $this->deactivated_at === null;
 }
+
+// ... داخل كلاس User
+
+public function getFullNameAttribute(): string
+{
+    // ابحث عن سجل الموظف أو المعلم المرتبط
+    $person = $this->employee ?? $this->teacher;
+
+    // افترض أن الاسم الأول موجود في جدول users، والباقي في جدول الموظف/المعلم
+    if ($person && isset($person->middle_name) && isset($person->last_name)) {
+        return trim("{$this->name} {$person->middle_name} {$person->last_name}");
+    }
+
+    // إذا لم يوجد، ارجع إلى الاسم الأساسي
+    return $this->name;
+}
+
 }
