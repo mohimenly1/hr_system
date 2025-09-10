@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany; // --- IMPORT THIS ---
-
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 class Employee extends Model
 {
@@ -77,4 +77,21 @@ class Employee extends Model
 {
     return $this->morphMany(Attendance::class, 'attendable');
 }
+
+public function shiftAssignment(): MorphOne
+{
+    return $this->morphOne(ShiftAssignment::class, 'shiftable');
+}
+
+public function constraints(): MorphMany
+    {
+        return $this->morphMany(SchedulingConstraint::class, 'schedulable');
+    }
+public function setPersonnelType($type, $modelClass)
+{
+    $this->personnel_type = $type;
+    $this->model_class = $modelClass;
+    return $this;
+}
+
 }

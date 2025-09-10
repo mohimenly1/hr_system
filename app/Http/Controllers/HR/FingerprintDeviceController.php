@@ -1,19 +1,22 @@
 <?php
 
-namespace App\Http\Controllers\HR;
+namespace App\Http\Controllers\Hr;
 
+// ... other use statements
+use App\Models\DeviceUser; // <-- إضافة النموذج الجديد
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
-use CodingLibs\ZktecoPhp\Libs\ZKTeco;
-use App\Models\User;
-use App\Models\Attendance;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use App\Models\Employee;
 use App\Models\Teacher;
+use Illuminate\Support\Str;
+use CodingLibs\ZktecoPhp\Libs\ZKTeco;
+use Illuminate\Http\Request;
+use Carbon\Carbon;
+use App\Models\Attendance;
+use App\Services\FingerprintService;
+
 
 class FingerprintDeviceController extends Controller
 {
@@ -37,10 +40,12 @@ class FingerprintDeviceController extends Controller
         }
         return $zk;
     }
+
     public function index()
     {
+        // --- التغيير: جلب المستخدمين من الجدول المؤقت عند تحميل الصفحة ---
         return Inertia::render('HR/Fingerprint/Index', [
-            'deviceUsers' => session('deviceUsers', []) // Pass any existing flashed data on initial load
+            'deviceUsers' => DeviceUser::all()
         ]);
     }
 
@@ -121,7 +126,7 @@ class FingerprintDeviceController extends Controller
     }
 
     /**
-     * Get and display users currently on the device.
+     * Get users from device, CACHE them in the database, and then display them.
      */
     public function getDeviceUsers()
     {
@@ -130,14 +135,31 @@ class FingerprintDeviceController extends Controller
             $zk = $this->getZkInstance();
             $deviceUsersRaw = $zk->getUsers();
             $zk->disconnect();
-            
+
+            // --- الخطوة الجديدة: تحديث الجدول المؤقت ---
+            if (is_array($deviceUsersRaw)) {
+                // أولاً، احذف المستخدمين القدامى الذين لم يعودوا موجودين في الجهاز
+                $deviceUids = collect($deviceUsersRaw)->pluck('uid')->all();
+                DeviceUser::whereNotIn('uid', $deviceUids)->delete();
+
+                foreach ($deviceUsersRaw as $user) {
+                    DeviceUser::updateOrCreate(
+                        ['uid' => $user['uid']], // الشرط: ابحث عن مستخدم بنفس الـ uid
+                        [
+                            'name' => $user['name'], // البيانات للتحديث أو الإنشاء
+                            'role' => $user['role'],
+                        ]
+                    );
+                }
+            }
+            // -----------------------------------------
+
             $deviceUsers = collect($deviceUsersRaw)->map(fn($user) => [
                 'uid' => $user['uid'],
                 'name' => $user['name'],
                 'role' => $user['role'],
             ])->all();
 
-            // --- THIS IS THE FIX: Pass data as a prop instead of flashing ---
             return Inertia::render('HR/Fingerprint/Index', [
                 'deviceUsers' => $deviceUsers
             ]);
@@ -158,11 +180,14 @@ class FingerprintDeviceController extends Controller
         try {
             $zk = $this->getZkInstance();
             $zk->disableDevice();
+            // --- تحديث إضافي: مسح الجدول المؤقت أيضاً ---
             $zk->clearAllUsers();
+            DeviceUser::truncate(); // يفرغ الجدول
+            // ----------------------------------------
             $zk->enableDevice();
             $zk->disconnect();
             
-            return Redirect::back()->with('success', 'تم مسح جميع المستخدمين من جهاز البصمة بنجاح.');
+            return Redirect::back()->with('success', 'تم مسح جميع المستخدمين من جهاز البصمة ومن ذاكرة النظام المؤقتة بنجاح.');
         } catch (\Exception $e) {
              if ($zk) { $zk->enableDevice(); $zk->disconnect(); }
             Log::error('Fingerprint Clear Users Error: ' . $e->getMessage());
@@ -257,18 +282,24 @@ class FingerprintDeviceController extends Controller
         }
     }
 
-    public function syncAttendance(Request $request)
+    public function syncAttendance(Request $request, FingerprintService $fingerprintService)
     {
         $request->validate(['date' => 'required|date']);
         $targetDate = Carbon::parse($request->date);
 
-        $result = $this->syncForDateRange($targetDate, $targetDate);
-
-        return Redirect::back()->with($result['status'], $result['message']);
+        try {
+            $result = $fingerprintService->syncForDateRange($targetDate->toDateString(), $targetDate->toDateString());
+            return Redirect::back()->with('success', $result['message']);
+        } catch (\Exception $e) {
+            Log::error("Fingerprint Sync Error: " . $e->getMessage());
+            return Redirect::back()->with('error', 'حدث خطأ أثناء المزامنة: ' . $e->getMessage());
+        }
     }
 
-
-    public function syncMonthly(Request $request)
+    /**
+     * Syncs attendance for a full month using the service.
+     */
+    public function syncMonthly(Request $request, FingerprintService $fingerprintService)
     {
         $request->validate(['month' => 'required|date_format:Y-m']);
         $month = Carbon::parse($request->month);
@@ -276,8 +307,13 @@ class FingerprintDeviceController extends Controller
         $startDate = $month->copy()->startOfMonth();
         $endDate = $month->copy()->endOfMonth();
 
-        $result = $this->syncForDateRange($startDate, $endDate);
-        
-        return Redirect::back()->with($result['status'], $result['message']);
+        try {
+            $result = $fingerprintService->syncForDateRange($startDate->toDateString(), $endDate->toDateString());
+            return Redirect::back()->with('success', $result['message']);
+        } catch (\Exception $e) {
+            Log::error("Fingerprint Sync Error: " . $e->getMessage());
+            return Redirect::back()->with('error', 'حدث خطأ أثناء المزامنة: ' . $e->getMessage());
+        }
     }
 }
+

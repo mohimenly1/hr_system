@@ -64,22 +64,22 @@ const toggleSettingsMenu = () => {
 
                 <!-- Academic Management Section -->
                 <div class="mb-4">
-    <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">الإدارة الأكاديمية</h3>
-    <div class="mt-2 space-y-1">
-        <Link :href="route('school.teachers.index')" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
-            <i class="fas fa-chalkboard-teacher fa-fw w-6 text-center"></i>
-            <span class="ml-3">إدارة المعلمين</span>
-        </Link>
-        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
-            <i class="fas fa-user-graduate fa-fw w-6 text-center"></i>
-            <span class="ml-3">إدارة الطلاب (قريباً)</span>
-        </a>
-        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
-            <i class="fas fa-calendar-week fa-fw w-6 text-center"></i>
-            <span class="ml-3">الجداول الدراسية (قريباً)</span>
-        </a>
-    </div>
-</div>
+                    <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">الإدارة الأكاديمية</h3>
+                    <div class="mt-2 space-y-1">
+                        <Link :href="route('school.teachers.index')" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-chalkboard-teacher fa-fw w-6 text-center"></i>
+                            <span class="ml-3">إدارة المعلمين</span>
+                        </Link>
+                        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
+                            <i class="fas fa-user-graduate fa-fw w-6 text-center"></i>
+                            <span class="ml-3">إدارة الطلاب (قريباً)</span>
+                        </a>
+                        <a href="#" class="flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-500 cursor-not-allowed">
+                            <i class="fas fa-calendar-week fa-fw w-6 text-center"></i>
+                            <span class="ml-3">الجداول الدراسية (قريباً)</span>
+                        </a>
+                    </div>
+                </div>
 
                 <!-- Settings Section -->
                 <div>
@@ -96,16 +96,17 @@ const toggleSettingsMenu = () => {
                             </button>
                             <div v-show="isSettingsMenuOpen" class="mt-1 space-y-1">
                                 <Link :href="route('school.academic-years.index')" :class="{ 'bg-gray-700': $page.component.startsWith('School/Academic/Years') }" class="flex items-center w-full pr-8 pl-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
-            - السنوات الدراسية
-        </Link>
-        <Link :href="route('school.grades.index')" :class="{ 'bg-gray-700': $page.component.startsWith('School/Academic/Grades') }" class="flex items-center w-full pr-8 pl-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
-            - المراحل الدراسية
-        </Link>
-        <!-- UPDATED LINK -->
-        <Link :href="route('school.sections.index')" :class="{ 'bg-gray-700': $page.component.startsWith('School/Academic/Sections') }" class="flex items-center w-full pr-8 pl-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
-            - الشعب الدراسية
-        </Link>
-        <Link :href="route('school.subjects.index')" :class="{ 'text-white font-bold': $page.component.startsWith('School/Academic/Subjects') }" class="block px-4 py-2 text-gray-300 hover:text-white">المقررات الدراسية</Link>
+                                    - السنوات الدراسية
+                                </Link>
+                                <Link :href="route('school.grades.index')" :class="{ 'bg-gray-700': $page.component.startsWith('School/Academic/Grades') }" class="flex items-center w-full pr-8 pl-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                                    - المراحل الدراسية
+                                </Link>
+                                <Link :href="route('school.sections.index')" :class="{ 'bg-gray-700': $page.component.startsWith('School/Academic/Sections') }" class="flex items-center w-full pr-8 pl-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                                    - الشعب الدراسية
+                                </Link>
+                                <Link :href="route('school.subjects.index')" :class="{ 'text-white font-bold': $page.component.startsWith('School/Academic/Subjects') }" class="flex items-center w-full pr-8 pl-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                                    - المقررات الدراسية
+                                </Link>
                             </div>
                         </div>
 
@@ -120,16 +121,24 @@ const toggleSettingsMenu = () => {
                         </Link>
                     </div>
 
-                    <!-- Add this inside the <nav> tag, perhaps in a new "Integrations" section -->
-<div class="px-4 mt-6">
-    <div class="border-t border-gray-700"></div>
-    <p class="mt-4 text-xs uppercase text-gray-400 tracking-wider">التكاملات</p>
-</div>
-<Link :href="route('hr.fingerprint.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/Fingerprint') }" class="block px-4 py-3 hover:bg-gray-700 transition duration-200">
-    <i class="fas fa-fingerprint mr-2 w-5 text-center"></i> جهاز البصمة
-</Link>
-
-
+                    <!-- Integrations Section -->
+                    <div class="mt-4">
+                        <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">التكاملات والإعدادات</h3>
+                        <div class="mt-2 space-y-1">
+                             <Link :href="route('hr.fingerprint.index')" :class="{ 'bg-gray-700': $page.component.startsWith('Hr/Fingerprint') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                                <i class="fas fa-fingerprint fa-fw w-6 text-center"></i>
+                                <span class="ml-3">جهاز البصمة</span>
+                            </Link>
+                             <Link :href="route('hr.shifts.index')" :class="{ 'bg-gray-700': $page.component.startsWith('Hr/Shifts') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                                <i class="fas fa-business-time fa-fw w-6 text-center"></i>
+                                <span class="ml-3">إدارة الورديات</span>
+                            </Link>
+                            <Link :href="route('hr.integrations.scheduling.index')" :class="{ 'bg-gray-700': $page.component.startsWith('Integrations/Scheduling') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                                <i class="fas fa-calendar-check fa-fw w-6 text-center"></i>
+                                <span class="ml-3">إعدادات الجدولة</span>
+                            </Link>
+                        </div>
+                    </div>
                 </div>
             </nav>
         </aside>
@@ -168,4 +177,3 @@ const toggleSettingsMenu = () => {
 <style>
 @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css');
 </style>
-

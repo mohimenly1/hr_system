@@ -37,6 +37,28 @@ class FingerprintService
     }
 
     /**
+     * Fetches all users from the fingerprint device.
+     *
+     * @return array
+     * @throws \Exception
+     */
+    public function getUsers(): array
+    {
+        try {
+            $this->connect();
+            $users = $this->zk->getUsers();
+            $this->disconnect();
+            return $users;
+        } catch (\Exception $e) {
+            $this->disconnect();
+            Log::error('Fingerprint Service - getUsers Error: ' . $e->getMessage());
+            // رمي الخطأ ليتم التعامل معه في الكنترولر أو إرجاع مصفوفة فارغة
+            throw $e;
+        }
+    }
+
+
+    /**
      * Syncs attendance records for a given date range.
      *
      * @param string $startDate
@@ -55,23 +77,16 @@ class FingerprintService
                 return ['processed' => 0, 'message' => 'لا توجد سجلات بصمة جديدة في الجهاز.'];
             }
             
-            $startDate = Carbon::parse($startDate)->startOfDay();
-            $endDate = Carbon::parse($endDate)->endOfDay();
+            $appTimezone = config('app.timezone');
+            $startDate = Carbon::parse($startDate, $appTimezone)->startOfDay();
+            $endDate = Carbon::parse($endDate, $appTimezone)->endOfDay();
             $processedCount = 0;
 
             $filteredLogs = collect($logs)->filter(function ($log) use ($startDate, $endDate, $fingerprintId) {
-                if (!isset($log['record_time'], $log['user_id'])) {
-                    return false;
-                }
-                $recordDate = Carbon::parse($log['record_time']);
+                if (!isset($log['record_time'], $log['user_id'])) return false;
+                $recordDate = Carbon::parse($log['record_time']); 
                 $isWithinRange = $recordDate->between($startDate, $endDate);
-                
-                // إذا تم تحديد رقم بصمة، يتم الفلترة بناءً عليه أيضاً
-                if ($fingerprintId) {
-                    return $isWithinRange && $log['user_id'] == $fingerprintId;
-                }
-                
-                return $isWithinRange;
+                return $fingerprintId ? ($isWithinRange && $log['user_id'] == $fingerprintId) : $isWithinRange;
             });
 
             if ($filteredLogs->isEmpty()) {
@@ -79,27 +94,64 @@ class FingerprintService
                 return ['processed' => 0, 'message' => "لا توجد سجلات بصمة {$period}."];
             }
 
-            // تجميع السجلات حسب اليوم والمستخدم
-            $groupedLogs = $filteredLogs->groupBy(function ($log) {
-                return Carbon::parse($log['record_time'])->toDateString() . '_' . $log['user_id'];
-            });
-
+            $groupedLogs = $filteredLogs->groupBy(fn($log) => Carbon::parse($log['record_time'])->toDateString() . '_' . $log['user_id']);
 
             foreach ($groupedLogs as $group) {
                 $firstLog = $group->first();
                 $fingerprintId = $firstLog['user_id'];
                 $attendanceDate = Carbon::parse($firstLog['record_time'])->toDateString();
 
-                // البحث عن الموظف أو المعلم
-                $person = Employee::where('fingerprint_id', $fingerprintId)->first()
-                         ?? Teacher::where('fingerprint_id', $fingerprintId)->first();
+                $person = Employee::with('shiftAssignment.shift')->where('fingerprint_id', $fingerprintId)->first()
+                         ?? Teacher::with('shiftAssignment.shift')->where('fingerprint_id', $fingerprintId)->first();
 
                 if (!$person) {
-                    continue; // تجاهل السجلات لمستخدمين غير معروفين
+                    continue;
                 }
                 
                 $checkIn = $group->min('record_time');
                 $checkOut = $group->count() > 1 ? $group->max('record_time') : null;
+
+                $status = 'present';
+                $notes = [];
+                $shiftAssignment = $person->shiftAssignment;
+
+                if ($shiftAssignment && $shiftAssignment->shift) {
+                    $shift = $shiftAssignment->shift;
+                    
+                    $shiftStartTime = Carbon::parse($attendanceDate . ' ' . $shift->start_time, $appTimezone);
+                    $shiftEndTime = Carbon::parse($attendanceDate . ' ' . $shift->end_time, $appTimezone);
+                    $deadline = $shiftStartTime->copy()->addMinutes($shift->grace_period_minutes);
+                    
+                    $checkInTime = Carbon::parse($checkIn, $appTimezone);
+                    
+                    if ($checkInTime->isAfter($deadline)) {
+                        $status = 'late';
+                        // --- THE FIX: Calculate difference using timestamps for reliability ---
+                        $lateSeconds = $checkInTime->getTimestamp() - $deadline->getTimestamp();
+                        $lateMinutes = (int) round($lateSeconds / 60);
+                        if ($lateMinutes > 0) {
+                            $notes[] = "تأخير لمدة {$lateMinutes} دقيقة.";
+                        }
+                    }
+
+                    if ($checkOut) {
+                        $checkOutTime = Carbon::parse($checkOut, $appTimezone);
+                        if ($checkOutTime->isBefore($shiftEndTime)) {
+                             // --- THE FIX: Calculate difference using timestamps for reliability ---
+                            $earlySeconds = $shiftEndTime->getTimestamp() - $checkOutTime->getTimestamp();
+                            $earlyMinutes = (int) round($earlySeconds / 60);
+                            if ($earlyMinutes > 0) {
+                                $notes[] = "مغادرة مبكرة بـ {$earlyMinutes} دقيقة.";
+                            }
+                        }
+                    } else {
+                        $notes[] = "لم يتم تسجيل بصمة الخروج.";
+                    }
+                } else {
+                    if (!$checkOut) {
+                        $notes[] = "لم يتم تسجيل بصمة الخروج.";
+                    }
+                }
 
                 Attendance::updateOrCreate(
                     [
@@ -110,7 +162,8 @@ class FingerprintService
                     [
                         'check_in_time' => Carbon::parse($checkIn)->format('H:i:s'),
                         'check_out_time' => $checkOut ? Carbon::parse($checkOut)->format('H:i:s') : null,
-                        'status' => 'present',
+                        'status' => $status,
+                        'notes' => implode(' | ', $notes),
                     ]
                 );
                 $processedCount++;
@@ -124,21 +177,15 @@ class FingerprintService
 
         } catch (\Exception $e) {
             $this->disconnect();
-            Log::error('Fingerprint Service Error: ' . $e->getMessage());
-            // رمي الخطأ ليتم التعامل معه في الكنترولر
+            Log::error('Fingerprint Service Error on line ' . $e->getLine() . ': ' . $e->getMessage());
             throw $e;
         }
     }
 
-    /**
-     * A simplified method to sync attendance for a single user for today.
-     *
-     * @param int $fingerprintId
-     * @return bool Returns true if a record was processed, false otherwise.
-     */
     public function syncSingleUser(int $fingerprintId, string $date): bool
     {
         $result = $this->syncForDateRange($date, $date, $fingerprintId);
         return $result['processed'] > 0;
     }
 }
+

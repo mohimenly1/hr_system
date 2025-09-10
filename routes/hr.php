@@ -9,6 +9,9 @@ use App\Http\Controllers\HR\AttendanceController;
 use App\Http\Controllers\HR\RoleController;
 use App\Http\Controllers\HR\UserController;
 use App\Http\Controllers\HR\FingerprintDeviceController;
+use App\Http\Controllers\HR\ShiftController;
+use App\Http\Controllers\HR\ShiftAssignmentController;
+use App\Http\Controllers\Integrations\SchedulingController; // <-- إضافة الكنترولر الجديد
 
 // A dedicated route group for all HR features, protected by auth middleware.
 Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(function () {
@@ -63,6 +66,22 @@ Route::post('/employees/{employee}/attendance/sync', [EmployeeController::class,
 ->name('employees.attendance.sync');
 
 
+// Routes for managing shifts and assignments
 
+Route::resource('hr/shifts', ShiftController::class)->names('shifts');
+Route::put('users/{user}/status', [UserController::class, 'updateStatus'])->name('users.update.status');
+
+Route::post('hr/shift-assignments', [ShiftAssignmentController::class, 'store'])->name('shift-assignments.store');
+
+        // Intelligent Scheduling
+      // Intelligent Scheduling
+      Route::get('integrations/scheduling', [SchedulingController::class, 'index'])->name('integrations.scheduling.index');
+      Route::post('integrations/scheduling/constraints', [SchedulingController::class, 'storeConstraints'])->name('integrations.scheduling.constraints.store');
+  
+      // Template Management
+      Route::post('integrations/scheduling/templates', [SchedulingController::class, 'storeTemplate'])->name('integrations.scheduling.templates.store');
+      Route::put('integrations/scheduling/templates/{template}', [SchedulingController::class, 'updateTemplate'])->name('integrations.scheduling.templates.update');
+      Route::post('integrations/scheduling/templates/{template}/constraints', [SchedulingController::class, 'storeTemplateConstraints'])->name('integrations.scheduling.templates.constraints.store');
+      Route::post('scheduling/generate', [SchedulingController::class, 'generateTimetable'])->name('integrations.scheduling.generate'); // <-- إضافة المسار الجديد
 });
 

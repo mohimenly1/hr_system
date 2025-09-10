@@ -24,7 +24,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'fingerprint_id'
+        'fingerprint_id',
+        'deactivated_at'
     ];
 
     /**
@@ -36,6 +37,8 @@ class User extends Authenticatable
         'password',
         'remember_token',
     ];
+
+    protected $appends = ['is_active'];
 
     /**
      * Get the attributes that should be cast.
@@ -61,4 +64,9 @@ class User extends Authenticatable
     {
         return $this->hasOne(Teacher::class);
     }
+
+    public function getIsActiveAttribute()
+{
+    return $this->deactivated_at === null;
+}
 }
