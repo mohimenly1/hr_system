@@ -14,6 +14,7 @@ use App\Http\Controllers\HR\ShiftAssignmentController;
 use App\Http\Controllers\Integrations\SchedulingController;
 use App\Http\Controllers\HR\DepartmentController;
 use App\Http\Controllers\HR\LeaveSettingsController;
+use App\Http\Controllers\HR\EvaluationSettingsController;
 
 // All routes in this file are protected by the 'auth' and 'verified' middleware
 // and are prefixed with '/hr' and named 'hr.'
@@ -32,7 +33,7 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
         Route::resource('departments', DepartmentController::class)->except(['show']);
 
         Route::resource('leave-settings', LeaveSettingsController::class)->only(['index', 'store', 'update']);
-
+        Route::resource('evaluation-settings', EvaluationSettingsController::class)->only(['index', 'store', 'update']);
         // --- Integrations & Advanced Settings ---
         Route::prefix('integrations')->name('integrations.')->group(function() {
             // Fingerprint Device

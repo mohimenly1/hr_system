@@ -106,6 +106,11 @@ const toggleSettingsMenu = () => {
                         <i class="fas fa-cogs fa-fw w-6 text-center"></i>
                         <span class="ml-3">إعدادات الإجازات</span>
                         </Link>
+                        <Link v-if="hasPermission('manage evaluation settings')" :href="route('hr.evaluation-settings.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/EvaluationSettings') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-star-half-alt fa-fw w-6 text-center"></i>
+                            <span class="ml-3">إعدادات التقييمات</span>
+                        </Link>
+
 
                     </div>
                 </div>

@@ -8,6 +8,7 @@ use App\Http\Controllers\School\SubjectController;
 use App\Http\Controllers\School\TeacherController;
 use App\Http\Controllers\School\TeacherContractController;
 use App\Http\Controllers\School\GradeSubjectController;
+use App\Http\Controllers\School\PerformanceEvaluationController;
 
 Route::middleware(['auth', 'verified'])->prefix('school')->name('school.')->group(function () {
     
@@ -44,5 +45,7 @@ Route::get('/teachers/{teacher}/attendance', [TeacherController::class, 'showAtt
 // مسار لتنفيذ مزامنة الحضور لمعلم واحد
 Route::post('/teachers/{teacher}/attendance/sync', [TeacherController::class, 'syncSingleAttendance'])
     ->name('teachers.attendance.sync');
+
+    Route::post('teachers/{teacher}/evaluations', [PerformanceEvaluationController::class, 'store'])->name('evaluations.store');
 });
 

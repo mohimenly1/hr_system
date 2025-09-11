@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\LeaveType;
 use App\Services\LeaveBalanceService;
 use Illuminate\Validation\ValidationException;
+use App\Models\EvaluationCriterion;
 
 
 class TeacherController extends Controller
@@ -209,13 +210,38 @@ class TeacherController extends Controller
     {
         $this->authorize('view', $teacher);
         
-        $teacher->load(['user.roles', 'department', 'contracts', 'attachments', 'leaves.leaveType', 'workExperiences', 'assignments.subject', 'assignments.section.grade']);
-        
+        // --- THE FIX: Load evaluations relationship and fetch necessary data ---
+        $teacher->load([
+            'user.roles', 
+            'department', 
+            'contracts', 
+            'attachments', 
+            'leaves.leaveType', 
+            'workExperiences', 
+            'assignments.subject', 
+            'assignments.section.grade',
+            'evaluations.results.criterion' // <-- التحديث الرئيسي هنا
+        ]);
+ 
+        $teacher->attachments->each(function ($attachment) {
+            $attachment->url = Storage::url($attachment->file_path);
+        });
+ 
+        // Calculate the average score from the loaded evaluations
+        $averageScore = $teacher->evaluations->avg('final_score_percentage');
+ 
+        $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
+ 
         return Inertia::render('School/Teachers/Show', [
             'teacher' => $teacher,
+            'grades' => $activeYear ? Grade::where('academic_year_id', $activeYear->id)
+                                        ->with(['sections', 'subjects:id,name'])
+                                        ->get() : [],
             'departments' => Department::all(['id', 'name']),
-            'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
+            'leaveTypes' => \App\Models\LeaveType::where('is_active', true)->get(['id', 'name']),
             'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($teacher),
+            'criteria' => EvaluationCriterion::where('is_active', true)->get(), // <-- جلب معايير التقييم
+            'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0, // <-- إرسال متوسط التقييم
         ]);
     }
     

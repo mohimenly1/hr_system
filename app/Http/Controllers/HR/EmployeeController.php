@@ -23,6 +23,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use App\Models\LeaveType;
 use App\Services\LeaveBalanceService;
 use Illuminate\Validation\ValidationException;
+use App\Models\EvaluationCriterion;
 
 
 class EmployeeController extends Controller
@@ -90,18 +91,22 @@ class EmployeeController extends Controller
              'attachments', 
              'leaves.leaveType', // <-- تحديث لتحميل نوع الإجازة الجديد
              'workExperiences',
-             'managedDepartments:id,name,manager_id'
+             'managedDepartments:id,name,manager_id',
+             'evaluations.results.criterion' // <-- تحميل سجل التقييمات وتفاصيله
          ]);
   
          $employee->attachments->each(function ($attachment) {
              $attachment->url = Storage::url($attachment->file_path);
          });
+         $averageScore = $employee->evaluations->avg('final_score_percentage');
   
          return Inertia::render('HR/Employees/Show', [
              'employee' => $employee,
              'departments' => Department::all(['id', 'name']),
              'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
              'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($employee),
+             'criteria' => EvaluationCriterion::where('is_active', true)->get(), // <-- جلب معايير التقييم
+             'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0, // <-- إرسال متوسط التقييم
          ]);
      }
     public function create()

@@ -105,5 +105,10 @@ public function managedDepartments(): HasMany
     return $this->hasMany(Department::class, 'manager_id', 'user_id');
 }
 
+public function evaluations(): MorphMany
+{
+    return $this->morphMany(PerformanceEvaluation::class, 'evaluable');
+}
+
 }
 
