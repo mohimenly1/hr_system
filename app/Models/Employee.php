@@ -112,4 +112,8 @@ public function evaluations(): MorphMany
 {
     return $this->morphMany(PerformanceEvaluation::class, 'evaluable');
 }
+public function penalties(): MorphMany
+{
+    return $this->morphMany(Penalty::class, 'penalizable');
+}
 }

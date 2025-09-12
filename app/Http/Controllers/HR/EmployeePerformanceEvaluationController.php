@@ -1,24 +1,23 @@
 <?php
 
-namespace App\Http\Controllers\School;
+namespace App\Http\Controllers\HR;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\EvaluationCriterion;
 use App\Models\PerformanceEvaluation;
-use App\Models\Teacher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
-class PerformanceEvaluationController extends Controller
+class EmployeePerformanceEvaluationController extends Controller
 {
     use AuthorizesRequests;
-
-    public function store(Request $request, Teacher $teacher)
+    public function store(Request $request, Employee $employee)
     {
-        $this->authorize('create', [PerformanceEvaluation::class, $teacher]);
+        $this->authorize('create', [PerformanceEvaluation::class, $employee]);
         
         $user = Auth::user();
         $validated = $request->validate([
@@ -32,7 +31,7 @@ class PerformanceEvaluationController extends Controller
 
         DB::beginTransaction();
         try {
-            $evaluation = $teacher->evaluations()->create([
+            $evaluation = $employee->evaluations()->create([
                 'title' => $validated['title'],
                 'evaluation_date' => $validated['evaluation_date'],
                 'overall_notes' => $validated['overall_notes'],
@@ -68,7 +67,6 @@ class PerformanceEvaluationController extends Controller
             return back()->with('error', 'حدث خطأ أثناء حفظ التقييم: ' . $e->getMessage());
         }
 
-        return Redirect::route('school.teachers.show', $teacher)->with('success', 'تم حفظ التقييم بنجاح.');
+        return Redirect::route('hr.employees.show', $employee)->with('success', 'تم حفظ التقييم بنجاح.');
     }
 }
-

@@ -105,7 +105,7 @@ onUnmounted(() => {
     <Head title="لوحة التحكم" />
     <HrLayout>
         <template #header>
-            <span v-if="userRole === 'department-manager' && activeDepartment">
+            <span v-if="userRole === 'department-manager'  && activeDepartment">
                 لوحة تحكم - قسم {{ activeDepartment.name }}
             </span>
             <span v-else>لوحة التحكم الرئيسية</span>
@@ -119,7 +119,7 @@ onUnmounted(() => {
             </div>
             
              <!-- NEW Custom Department Switcher -->
-            <div v-if="userRole === 'department-manager' && managedDepartments.length > 1" class="relative">
+            <div v-if="userRole == 'department-manager' && managedDepartments.length > 1" class="relative">
                 <button @click="isDeptFilterOpen = !isDeptFilterOpen" class="flex items-center space-x-2 rtl:space-x-reverse bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 font-semibold py-2 px-4 rounded-lg transition shadow-sm">
                     <i class="fas fa-building text-indigo-500"></i>
                     <span>عرض قسم: {{ activeDepartment.name }}</span>

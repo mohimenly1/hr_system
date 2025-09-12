@@ -15,6 +15,9 @@ use App\Http\Controllers\Integrations\SchedulingController;
 use App\Http\Controllers\HR\DepartmentController;
 use App\Http\Controllers\HR\LeaveSettingsController;
 use App\Http\Controllers\HR\EvaluationSettingsController;
+use App\Http\Controllers\HR\EmployeePerformanceEvaluationController;
+use App\Http\Controllers\HR\PenaltySettingsController;
+use App\Http\Controllers\HR\PenaltyController;
 
 // All routes in this file are protected by the 'auth' and 'verified' middleware
 // and are prefixed with '/hr' and named 'hr.'
@@ -34,6 +37,9 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
 
         Route::resource('leave-settings', LeaveSettingsController::class)->only(['index', 'store', 'update']);
         Route::resource('evaluation-settings', EvaluationSettingsController::class)->only(['index', 'store', 'update']);
+        Route::post('employees/{employee}/evaluations', [EmployeePerformanceEvaluationController::class, 'store'])->name('employees.evaluations.store');
+        Route::resource('penalty-settings', PenaltySettingsController::class)->only(['index', 'store', 'update']);
+        Route::post('penalties', [PenaltyController::class, 'store'])->name('penalties.store');
         // --- Integrations & Advanced Settings ---
         Route::prefix('integrations')->name('integrations.')->group(function() {
             // Fingerprint Device

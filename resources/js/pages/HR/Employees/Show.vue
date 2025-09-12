@@ -8,6 +8,8 @@ const props = defineProps({
     departments: Array, // <-- استقبال قائمة الأقسام
     leaveTypes: Array,
     leaveBalances: Array,
+    criteria: Array,
+    averageEvaluationScore: Number,
 });
 
 const page = usePage();
@@ -16,6 +18,35 @@ const authUser = computed(() => page.props.auth.user);
 const canManage = computed(() => {
     return authUser.value.roles.includes('admin') || authUser.value.roles.includes('hr-manager');
 });
+const canEvaluate = computed(() => authUser.value.permissions.includes('manage evaluations'));
+
+
+// --- Evaluation Modals State ---
+const showEvaluationModal = ref(false);
+const showEvaluationDetailsModal = ref(false);
+const selectedEvaluationForDetails = ref(null);
+
+const openEvaluationDetailsModal = (evaluation) => {
+    selectedEvaluationForDetails.value = evaluation;
+    showEvaluationDetailsModal.value = true;
+};
+
+// --- Evaluation Form ---
+const evaluationForm = useForm({
+    title: `تقييم ${new Date().getFullYear()}`,
+    evaluation_date: new Date().toISOString().split('T')[0],
+    overall_notes: '',
+    results: props.criteria.map(c => ({ criterion_id: c.id, score: 0 })),
+});
+
+const totalMaxScore = computed(() => props.criteria.reduce((total, c) => total + c.max_score, 0));
+const currentTotalScore = computed(() => evaluationForm.results.reduce((total, r) => total + Number(r.score), 0));
+const finalPercentage = computed(() => totalMaxScore.value === 0 ? 0 : ((currentTotalScore.value / totalMaxScore.value) * 100).toFixed(2));
+const getCriterionById = (id) => props.criteria.find(c => c.id === id);
+
+const openEvaluationModal = () => { evaluationForm.reset(); showEvaluationModal.value = true; };
+const submitEvaluation = () => { evaluationForm.post(route('hr.employees.evaluations.store', props.employee.id), { onSuccess: () => { showEvaluationModal.value = false; } }); };
+
 
 // State for modals
 const showAddAttachmentModal = ref(false);
@@ -303,23 +334,7 @@ const deleteExperience = (experience) => {
                             </div>
                         </form>
                     </div>
-                    <div class="bg-white shadow-md rounded-lg p-6">
-                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">أرصدة الإجازات</h3>
-                        <div v-if="leaveBalances.length > 0" class="space-y-4">
-                            <div v-for="balance in leaveBalances" :key="balance.name">
-                                <div class="flex justify-between items-center mb-1">
-                                    <span class="text-sm font-medium text-gray-700">{{ balance.name }}</span>
-                                    <span class="text-sm font-bold text-gray-800">{{ balance.available }} / {{ balance.total }} يوم</span>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div class="bg-indigo-600 h-2.5 rounded-full" :style="{ width: (balance.used / balance.total * 100) + '%' }"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <p v-else class="text-sm text-center text-gray-500 py-4">لم يتم تعريف أنواع إجازات بعد.</p>
-                    </div>
 
-               
                     <!-- Attachments -->
                     <div class="bg-white shadow-md rounded-lg p-6">
                         <div class="flex justify-between items-center border-b pb-2 mb-4">
@@ -445,6 +460,57 @@ const deleteExperience = (experience) => {
                         </div>
                          <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد طلبات إجازة مسجلة.</p>
                     </div>
+
+
+
+                           <!-- Evaluation History Card -->
+                           <div class="bg-white shadow-md rounded-lg p-6">
+                        <div class="flex justify-between items-center border-b pb-2 mb-4">
+                            <h3 class="text-lg font-bold text-gray-800">سجل التقييمات</h3>
+                            <button v-if="canEvaluate" @click="openEvaluationModal" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-indigo-200">
+                                <i class="fas fa-plus"></i> بدء تقييم
+                            </button>
+                        </div>
+                        <div v-if="employee.evaluations && employee.evaluations.length > 0">
+                            <div class="text-center mb-4">
+                                <p class="text-sm text-gray-600">متوسط التقييم العام</p>
+                                <p class="text-4xl font-bold text-indigo-600">{{ averageEvaluationScore || 0 }}%</p>
+                            </div>
+                            <div class="space-y-3">
+                               <div v-for="evalItem in employee.evaluations.slice(0, 5)" :key="evalItem.id" class="flex justify-between items-center p-2 rounded-md hover:bg-gray-50">
+                                   <div>
+                                       <p class="font-semibold text-gray-800">{{ evalItem.title }}</p>
+                                       <p class="text-xs text-gray-500">{{ displayFormatDate(evalItem.evaluation_date) }}</p>
+                                   </div>
+                                   <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                                       <span class="text-lg font-bold text-gray-700">{{ evalItem.final_score_percentage }}%</span>
+                                       <button @click="openEvaluationDetailsModal(evalItem)" class="text-blue-600 hover:text-blue-800" title="عرض التفاصيل">
+                                           <i class="fas fa-eye"></i>
+                                       </button>
+                                   </div>
+                               </div>
+                            </div>
+                        </div>
+                         <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد تقييمات سابقة.</p>
+                    </div>
+
+
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">أرصدة الإجازات</h3>
+                        <div v-if="leaveBalances.length > 0" class="space-y-4">
+                            <div v-for="balance in leaveBalances" :key="balance.name">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-sm font-medium text-gray-700">{{ balance.name }}</span>
+                                    <span class="text-sm font-bold text-gray-800">{{ balance.available }} / {{ balance.total }} يوم</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div class="bg-indigo-600 h-2.5 rounded-full" :style="{ width: (balance.used / balance.total * 100) + '%' }"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <p v-else class="text-sm text-center text-gray-500 py-4">لم يتم تعريف أنواع إجازات بعد.</p>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -616,6 +682,111 @@ const deleteExperience = (experience) => {
             </div>
         </div>
 
+
+
+
+         <!-- Evaluation Modals -->
+         <div v-if="showEvaluationModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <div class="bg-white rounded-lg shadow-xl p-0 w-full max-w-4xl">
+                <form @submit.prevent="submitEvaluation">
+                    <div class="p-6 border-b">
+                        <h2 class="text-2xl font-bold text-gray-800">تقييم: {{ employee.user.full_name }}</h2>
+                        <p class="text-gray-600">{{ employee.job_title }} - {{ employee.department.name }}</p>
+                    </div>
+                    <div class="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-800">عنوان التقييم</label>
+                                <input type="text" v-model="evaluationForm.title" class="mt-1 block w-full rounded-md" required>
+                            </div>
+                             <div>
+                                <label class="block text-sm font-medium text-gray-800">تاريخ التقييم</label>
+                                <input type="date" v-model="evaluationForm.evaluation_date" class="mt-1 block w-full rounded-md" required>
+                            </div>
+                        </div>
+                        <hr>
+                        <h3 class="text-lg font-semibold text-gray-800">بنود التقييم</h3>
+                        <div class="space-y-4">
+                            <div v-for="result in evaluationForm.results" :key="result.criterion_id" class="p-4 bg-gray-50 rounded-lg">
+                                <label class="block font-medium text-gray-800">{{ getCriterionById(result.criterion_id).name }}</label>
+                                <p class="text-xs text-gray-500 mb-2">{{ getCriterionById(result.criterion_id).description }}</p>
+                                <div class="flex items-center space-x-4 rtl:space-x-reverse">
+                                    <input type="range" v-model="result.score" :max="getCriterionById(result.criterion_id).max_score" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                                    <span class="font-bold text-indigo-600 w-16 text-center">{{ result.score }} / {{ getCriterionById(result.criterion_id).max_score }}</span>
+                                </div>
+                            </div>
+                        </div>
+                         <hr>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-800">الملاحظات العامة</label>
+                            <textarea v-model="evaluationForm.overall_notes" rows="4" class="mt-1 block w-full rounded-md"></textarea>
+                        </div>
+                        <div class="p-4 bg-indigo-50 rounded-lg text-center">
+                            <p class="text-sm font-medium text-indigo-800">النتيجة النهائية للتقييم</p>
+                            <p class="text-3xl font-bold text-indigo-600">{{ finalPercentage }}%</p>
+                        </div>
+                    </div>
+                    <div class="p-6 bg-gray-50 rounded-b-lg flex justify-end space-x-2 rtl:space-x-reverse">
+                         <button type="button" @click="showEvaluationModal = false" class="bg-gray-200 px-4 py-2 rounded-md">إلغاء</button>
+                         <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md" :disabled="evaluationForm.processing">حفظ التقييم</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div v-if="showEvaluationDetailsModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <div v-if="selectedEvaluationForDetails" class="bg-white rounded-lg shadow-xl p-0 w-full max-w-3xl">
+                <div class="p-6 border-b">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-2xl font-bold text-gray-800">{{ selectedEvaluationForDetails.title }}</h3>
+                            <p class="text-sm text-gray-500">تاريخ التقييم: {{ displayFormatDate(selectedEvaluationForDetails.evaluation_date) }}</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm text-gray-600">النتيجة النهائية</p>
+                            <p class="text-3xl font-bold text-indigo-600">{{ selectedEvaluationForDetails.final_score_percentage }}%</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6 max-h-[60vh] overflow-y-auto">
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50 text-gray-700">
+                            <tr>
+                                <th class="py-2 px-3 text-right font-semibold  text-sm">المعيار</th>
+                                <th class="py-2 px-3 text-center font-semibold text-sm">تقييم المدير</th>
+                                <th class="py-2 px-3 text-center font-semibold text-sm">تقييم المسؤول</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y text-gray-700">
+                            <tr v-for="result in selectedEvaluationForDetails.results" :key="result.id">
+                                <td class="py-3 px-3">
+                                    <p class="font-medium text-gray-800">{{ result.criterion.name }}</p>
+                                    <p class="text-xs text-gray-500">الدرجة القصوى: {{ result.criterion.max_score }}</p>
+                                </td>
+                                <td class="py-3 px-3 text-center font-mono text-lg">{{ result.manager_score ?? '-' }}</td>
+                                <td class="py-3 px-3 text-center font-mono text-lg">{{ result.admin_score ?? '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                     <div v-if="selectedEvaluationForDetails.overall_notes" class="mt-6 border-t pt-4">
+                        <h4 class="font-semibold text-gray-800">الملاحظات العامة:</h4>
+                        <p class="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{{ selectedEvaluationForDetails.overall_notes }}</p>
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-b-lg flex justify-end">
+                    <button @click="showEvaluationDetailsModal = false" class="bg-gray-200 px-4 py-2 rounded-md">إغلاق</button>
+                </div>
+            </div>
+        </div>
+
     </HrLayout>
 </template>
 
+<style>
+input{
+    color: black !important;
+}
+textarea{
+    color: black !important;
+    border: solid 1px black;
+}
+</style>

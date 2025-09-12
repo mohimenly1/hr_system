@@ -24,6 +24,7 @@ use App\Models\LeaveType;
 use App\Services\LeaveBalanceService;
 use Illuminate\Validation\ValidationException;
 use App\Models\EvaluationCriterion;
+use App\Models\PenaltyType;
 
 
 class TeacherController extends Controller
@@ -210,38 +211,42 @@ class TeacherController extends Controller
     {
         $this->authorize('view', $teacher);
         
-        // --- THE FIX: Load evaluations relationship and fetch necessary data ---
         $teacher->load([
-            'user.roles', 
-            'department', 
-            'contracts', 
-            'attachments', 
-            'leaves.leaveType', 
-            'workExperiences', 
-            'assignments.subject', 
-            'assignments.section.grade',
-            'evaluations.results.criterion' // <-- التحديث الرئيسي هنا
+            'user.roles', 'department', 'contracts', 'attachments', 'leaves.leaveType', 
+            'workExperiences', 'assignments.subject', 'assignments.section.grade',
+            'evaluations.results.criterion', 'penalties.penaltyType', 'penalties.issuer:id,name'
         ]);
  
-        $teacher->attachments->each(function ($attachment) {
-            $attachment->url = Storage::url($attachment->file_path);
-        });
- 
-        // Calculate the average score from the loaded evaluations
         $averageScore = $teacher->evaluations->avg('final_score_percentage');
  
-        $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
+        // --- التحديث الرئيسي: حساب الخصومات قبل عرض الصفحة ---
+        $lastEvaluationDate = $teacher->evaluations()->latest('evaluation_date')->value('evaluation_date');
+        $deductions = $teacher->penalties()
+            ->where('issued_at', '>', $lastEvaluationDate ?? '1970-01-01')
+            ->with('penaltyType.criteria')
+            ->get()
+            ->flatMap(fn($penalty) => $penalty->penaltyType->criteria->map(fn($criterion) => [
+                'criterion_id' => $criterion->id,
+                'points' => $criterion->pivot->deduction_points,
+                'reason' => $penalty->penaltyType->name,
+            ]))
+            ->groupBy('criterion_id')
+            ->map(fn($group) => [
+                'total_deduction' => $group->sum('points'),
+                'reasons' => $group->pluck('reason')->unique()->implode(', '),
+            ]);
+        // ----------------------------------------------------
  
         return Inertia::render('School/Teachers/Show', [
             'teacher' => $teacher,
-            'grades' => $activeYear ? Grade::where('academic_year_id', $activeYear->id)
-                                        ->with(['sections', 'subjects:id,name'])
-                                        ->get() : [],
+            'grades' => \App\Models\AcademicYear::where('is_active', true)->first() ? Grade::where('academic_year_id', \App\Models\AcademicYear::where('is_active', true)->first()->id)->with(['sections', 'subjects:id,name'])->get() : [],
             'departments' => Department::all(['id', 'name']),
-            'leaveTypes' => \App\Models\LeaveType::where('is_active', true)->get(['id', 'name']),
+            'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
             'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($teacher),
-            'criteria' => EvaluationCriterion::where('is_active', true)->get(), // <-- جلب معايير التقييم
-            'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0, // <-- إرسال متوسط التقييم
+            'criteria' => EvaluationCriterion::where('is_active', true)->get(),
+            'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0,
+            'penaltyTypes' => PenaltyType::where('is_active', true)->get(['id', 'name']),
+            'deductions' => $deductions, // <-- تمرير الخصومات المحسوبة للواجهة
         ]);
     }
     

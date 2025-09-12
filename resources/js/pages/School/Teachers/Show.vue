@@ -11,6 +11,8 @@ const props = defineProps({
     leaveBalances: Array,
     criteria: Array, // <-- استقبال معايير التقييم
     averageEvaluationScore: Number,
+    penaltyTypes: Array, // <-- استقبال أنواع العقوبات
+    deductions: Object, // <-- استقبال الخصومات
 });
 
 
@@ -19,6 +21,35 @@ const authUser = computed(() => page.props.auth.user);
 const canManage = computed(() => {
     return authUser.value.roles.includes('admin') || authUser.value.roles.includes('hr-manager');
 });
+const canEvaluate = computed(() => authUser.value.permissions.includes('manage evaluations'));
+const canImposePenalty = computed(() => authUser.value.permissions.includes('manage penalties')); // <-- صلاحية جديدة
+
+
+
+// --- NEW Penalty Modal State & Form ---
+const showPenaltyModal = ref(false);
+const penaltyForm = useForm({
+    penalizable_id: props.teacher.id,
+    penalizable_type: 'App\\Models\\Teacher',
+    penalty_type_id: null,
+    reason: '',
+    issued_at: new Date().toISOString().split('T')[0],
+});
+
+const openPenaltyModal = () => {
+    penaltyForm.reset();
+    penaltyForm.penalizable_id = props.teacher.id;
+    penaltyForm.penalizable_type = 'App\\Models\\Teacher';
+    showPenaltyModal.value = true;
+};
+
+const submitPenalty = () => {
+    // We use a generic route for both employees and teachers
+    router.post(route('hr.penalties.store'), penaltyForm, {
+        onSuccess: () => { showPenaltyModal.value = false; },
+        preserveScroll: true,
+    });
+};
 
 
 // هنا يبدأ منطق التقييم 
@@ -46,6 +77,11 @@ const evaluationForm = useForm({
         score: 0,
     })),
 });
+
+const getDeductionForCriterion = (criterionId) => {
+    return props.deductions[criterionId] || null;
+};
+
 
 const totalMaxScore = computed(() => props.criteria.reduce((total, criterion) => total + criterion.max_score, 0));
 const currentTotalScore = computed(() => evaluationForm.results.reduce((total, result) => total + Number(result.score), 0));
@@ -315,52 +351,7 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                             </div>
                         </form>
                     </div>
-                    <div class="bg-white shadow-md rounded-lg p-6">
-                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">أرصدة الإجازات</h3>
-                        <div v-if="leaveBalances.length > 0" class="space-y-4">
-                            <div v-for="balance in leaveBalances" :key="balance.name">
-                                <div class="flex justify-between items-center mb-1">
-                                    <span class="text-sm font-medium text-gray-700">{{ balance.name }}</span>
-                                    <span class="text-sm font-bold text-gray-800">{{ balance.available }} / {{ balance.total }} يوم</span>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div class="bg-indigo-600 h-2.5 rounded-full" :style="{ width: (balance.used / balance.total * 100) + '%' }"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <p v-else class="text-sm text-center text-gray-500 py-4">لم يتم تعريف أنواع إجازات بعد.</p>
-                    </div>
-
-                      <!-- NEW Evaluation History Card -->
-                      <div class="bg-white shadow-md rounded-lg p-6">
-                        <div class="flex justify-between items-center border-b pb-2 mb-4">
-                            <h3 class="text-lg font-bold text-gray-800">سجل التقييمات</h3>
-                            <button v-if="canManage" @click="openEvaluationModal" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-indigo-200">
-                                <i class="fas fa-plus"></i> بدء تقييم
-                            </button>
-                        </div>
-                        <div v-if="teacher.evaluations && teacher.evaluations.length > 0">
-                            <div class="text-center mb-4">
-                                <p class="text-sm text-gray-600">متوسط التقييم العام</p>
-                                <p class="text-4xl font-bold text-indigo-600">{{ averageEvaluationScore || 0 }}%</p>
-                            </div>
-                            <div class="space-y-3">
-                               <div v-for="evalItem in teacher.evaluations.slice(0, 5)" :key="evalItem.id" class="flex justify-between items-center p-2 rounded-md hover:bg-gray-50">
-                                   <div>
-                                       <p class="font-semibold text-gray-800">{{ evalItem.title }}</p>
-                                       <p class="text-xs text-gray-500">{{ displayFormatDate(evalItem.evaluation_date) }}</p>
-                                   </div>
-                                   <div class="flex items-center space-x-2 rtl:space-x-reverse">
-                                       <span class="text-lg font-bold text-gray-700">{{ evalItem.final_score_percentage }}%</span>
-                                       <button @click="openEvaluationDetailsModal(evalItem)" class="text-blue-600 hover:text-blue-800" title="عرض التفاصيل">
-                                           <i class="fas fa-eye"></i>
-                                       </button>
-                                   </div>
-                               </div>
-                            </div>
-                        </div>
-                         <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد تقييمات سابقة.</p>
-                    </div>
+                 
                  
                     <!-- Attachments -->
                     <div class="bg-white shadow-md rounded-lg p-6">
@@ -510,6 +501,88 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                            </table>
                         </div>
                          <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد طلبات إجازة مسجلة.</p>
+                    </div>
+
+
+
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">أرصدة الإجازات</h3>
+                        <div v-if="leaveBalances.length > 0" class="space-y-4">
+                            <div v-for="balance in leaveBalances" :key="balance.name">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-sm font-medium text-gray-700">{{ balance.name }}</span>
+                                    <span class="text-sm font-bold text-gray-800">{{ balance.available }} / {{ balance.total }} يوم</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div class="bg-indigo-600 h-2.5 rounded-full" :style="{ width: (balance.used / balance.total * 100) + '%' }"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <p v-else class="text-sm text-center text-gray-500 py-4">لم يتم تعريف أنواع إجازات بعد.</p>
+                    </div>
+
+                      <!-- NEW Evaluation History Card -->
+                      <div class="bg-white shadow-md rounded-lg p-6">
+                        <div class="flex justify-between items-center border-b pb-2 mb-4">
+                            <h3 class="text-lg font-bold text-gray-800">سجل التقييمات</h3>
+                            <button v-if="canManage" @click="openEvaluationModal" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-indigo-200">
+                                <i class="fas fa-plus"></i> بدء تقييم
+                            </button>
+                        </div>
+                        <div v-if="teacher.evaluations && teacher.evaluations.length > 0">
+                            <div class="text-center mb-4">
+                                <p class="text-sm text-gray-600">متوسط التقييم العام</p>
+                                <p class="text-4xl font-bold text-indigo-600">{{ averageEvaluationScore || 0 }}%</p>
+                            </div>
+                            <div class="space-y-3">
+                               <div v-for="evalItem in teacher.evaluations.slice(0, 5)" :key="evalItem.id" class="flex justify-between items-center p-2 rounded-md hover:bg-gray-50">
+                                   <div>
+                                       <p class="font-semibold text-gray-800">{{ evalItem.title }}</p>
+                                       <p class="text-xs text-gray-500">{{ displayFormatDate(evalItem.evaluation_date) }}</p>
+                                   </div>
+                                   <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                                       <span class="text-lg font-bold text-gray-700">{{ evalItem.final_score_percentage }}%</span>
+                                       <button @click="openEvaluationDetailsModal(evalItem)" class="text-blue-600 hover:text-blue-800" title="عرض التفاصيل">
+                                           <i class="fas fa-eye"></i>
+                                       </button>
+                                   </div>
+                               </div>
+                            </div>
+                        </div>
+                         <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد تقييمات سابقة.</p>
+                    </div>
+
+
+                     <!-- NEW Penalty History Card -->
+                     <div class="bg-white shadow-md rounded-lg p-6">
+                        <div class="flex justify-between items-center border-b pb-2 mb-4">
+                            <h3 class="text-lg font-bold text-gray-800">سجل العقوبات</h3>
+                            <button v-if="canImposePenalty" @click="openPenaltyModal" class="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-red-200">
+                                <i class="fas fa-gavel"></i> إصدار عقوبة
+                            </button>
+                        </div>
+                        <div v-if="teacher.penalties && teacher.penalties.length > 0" class="overflow-x-auto">
+                           <table class="min-w-full text-sm">
+                               <thead class="bg-gray-50">
+                                   <tr>
+                                       <th class="text-right p-2 font-semibold text-gray-600">العقوبة</th>
+                                       <th class="text-right p-2 font-semibold text-gray-600">التاريخ</th>
+                                       <th class="text-right p-2 font-semibold text-gray-600">المصدر</th>
+                                   </tr>
+                               </thead>
+                               <tbody class="text-gray-700">
+                                   <tr v-for="penalty in teacher.penalties" :key="penalty.id" class="border-b">
+                                       <td class="p-2">
+                                           <p class="font-semibold">{{ penalty.penalty_type.name }}</p>
+                                           <p class="text-xs text-gray-500">{{ penalty.reason }}</p>
+                                       </td>
+                                       <td class="p-2">{{ displayFormatDate(penalty.issued_at) }}</td>
+                                       <td class="p-2">{{ penalty.issuer.name }}</td>
+                                   </tr>
+                               </tbody>
+                           </table>
+                        </div>
+                         <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد سجل عقوبات لهذا المعلم.</p>
                     </div>
 
                 </div>
@@ -723,12 +796,22 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                         <hr>
                         <h3 class="text-lg font-semibold text-gray-800">بنود التقييم</h3>
                         <div class="space-y-4">
-                            <div v-for="result in evaluationForm.results" :key="result.criterion_id" class="p-4 bg-gray-50 rounded-lg">
-                                <label class="block font-medium text-gray-800">{{ getCriterionById(result.criterion_id).name }}</label>
-                                <p class="text-xs text-gray-500 mb-2">{{ getCriterionById(result.criterion_id).description }}</p>
+                            <div v-for="criterion in criteria" :key="criterion.id" class="p-4 bg-gray-50 rounded-lg">
+                                <label class="block font-medium text-gray-800">{{ criterion.name }}</label>
+                                
+                                <div v-if="getDeductionForCriterion(criterion.id)" class="my-2 p-2 bg-red-100 text-red-700 text-xs rounded-md">
+                                    <p class="font-bold">خصم تلقائي: -{{ getDeductionForCriterion(criterion.id).total_deduction }} درجة</p>
+                                    <p>السبب: {{ getDeductionForCriterion(criterion.id).reasons }}</p>
+                                </div>
+
                                 <div class="flex items-center space-x-4 rtl:space-x-reverse">
-                                    <input type="range" v-model="result.score" :max="getCriterionById(result.criterion_id).max_score" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
-                                    <span class="font-bold text-indigo-600 w-16 text-center">{{ result.score }} / {{ getCriterionById(result.criterion_id).max_score }}</span>
+                                    <input type="range" 
+                                           v-model="evaluationForm.results.find(r => r.criterion_id === criterion.id).score" 
+                                           :max="criterion.max_score - (getDeductionForCriterion(criterion.id)?.total_deduction || 0)" 
+                                           class="w-full">
+                                    <span class="font-bold text-indigo-600 w-24 text-center">
+                                        {{ evaluationForm.results.find(r => r.criterion_id === criterion.id).score }} / {{ criterion.max_score - (getDeductionForCriterion(criterion.id)?.total_deduction || 0) }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -798,6 +881,36 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
             </div>
         </div>
 
+
+         <!-- NEW Penalty Modal -->
+         <div v-if="showPenaltyModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+                <div class="flex justify-between items-center border-b pb-3"><h3 class="text-xl font-bold text-gray-800">إصدار عقوبة جديدة</h3><button @click="showPenaltyModal = false" class="text-gray-500 hover:text-gray-800">&times;</button></div>
+                <form @submit.prevent="submitPenalty" class="mt-4 space-y-4">
+                    <div>
+                        <label class="block mb-2 text-sm font-medium text-gray-900">نوع العقوبة*</label>
+                        <select v-model="penaltyForm.penalty_type_id" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required>
+                            <option :value="null" disabled>-- اختر نوع العقوبة --</option>
+                            <option v-for="type in penaltyTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
+                        </select>
+                        <div v-if="penaltyForm.errors.penalty_type_id" class="text-sm text-red-600 mt-1">{{ penaltyForm.errors.penalty_type_id }}</div>
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-sm font-medium text-gray-900">تاريخ الإصدار*</label>
+                        <input type="date" v-model="penaltyForm.issued_at" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required>
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-sm font-medium text-gray-900">سبب العقوبة*</label>
+                        <textarea rows="4" v-model="penaltyForm.reason" class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300" required></textarea>
+                         <div v-if="penaltyForm.errors.reason" class="text-sm text-red-600 mt-1">{{ penaltyForm.errors.reason }}</div>
+                    </div>
+                    <div class="flex justify-end pt-4 border-t space-x-2 rtl:space-x-reverse">
+                        <button type="button" @click="showPenaltyModal = false" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">إلغاء</button>
+                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700" :disabled="penaltyForm.processing">تأكيد إصدار العقوبة</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </HrLayout>
 </template>
 <style>
