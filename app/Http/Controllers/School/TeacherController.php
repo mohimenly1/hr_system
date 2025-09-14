@@ -25,6 +25,8 @@ use App\Services\LeaveBalanceService;
 use Illuminate\Validation\ValidationException;
 use App\Models\EvaluationCriterion;
 use App\Models\PenaltyType;
+use App\Models\ActivityLog;
+use App\Models\DeductionLog;
 
 
 class TeacherController extends Controller
@@ -212,41 +214,101 @@ class TeacherController extends Controller
         $this->authorize('view', $teacher);
         
         $teacher->load([
-            'user.roles', 'department', 'contracts', 'attachments', 'leaves.leaveType', 
-            'workExperiences', 'assignments.subject', 'assignments.section.grade',
-            'evaluations.results.criterion', 'penalties.penaltyType', 'penalties.issuer:id,name'
+            'user.roles', 'department', 'contracts', 'attachments', 
+            'leaves.leaveType', 'workExperiences', 'assignments.subject', 
+            'assignments.section.grade', 
+            'evaluations.results.criterion', // نحتاجها لجلب سجلات الخصم
+            'penalties.penaltyType', 'penalties.issuer:id,name' // نحتاجها لجلب سجلات العقوبات
         ]);
  
         $averageScore = $teacher->evaluations->avg('final_score_percentage');
  
-        // --- التحديث الرئيسي: حساب الخصومات قبل عرض الصفحة ---
-        $lastEvaluationDate = $teacher->evaluations()->latest('evaluation_date')->value('evaluation_date');
+        $activeYear = \App\Models\AcademicYear::where('is_active', true)->first();
+        $activeCriteria = EvaluationCriterion::where('is_active', true)->get();
+
         $deductions = $teacher->penalties()
-            ->where('issued_at', '>', $lastEvaluationDate ?? '1970-01-01')
-            ->with('penaltyType.criteria')
-            ->get()
-            ->flatMap(fn($penalty) => $penalty->penaltyType->criteria->map(fn($criterion) => [
-                'criterion_id' => $criterion->id,
-                'points' => $criterion->pivot->deduction_points,
-                'reason' => $penalty->penaltyType->name,
-            ]))
-            ->groupBy('criterion_id')
-            ->map(fn($group) => [
-                'total_deduction' => $group->sum('points'),
+        ->whereYear('issued_at', now()->year)   // <-- فلترة حسب السنة الحالية
+        ->whereMonth('issued_at', now()->month) // <-- فلترة حسب الشهر الحالي
+        ->with('penaltyType.criteria')
+        ->get()
+        ->flatMap(fn($penalty) => $penalty->penaltyType->criteria->map(fn($criterion) => [
+            'criterion_id' => $criterion->id,
+            'points' => $criterion->pivot->deduction_points,
+            'reason' => $penalty->penaltyType->name,
+        ]))
+        ->groupBy('criterion_id')
+        ->map(function ($group, $criterionId) use ($activeCriteria) {
+            $criterion = $activeCriteria->firstWhere('id', $criterionId);
+            if (!$criterion) return null;
+
+            $totalDeduction = $group->sum('points');
+            $cappedDeduction = min($totalDeduction, $criterion->max_score);
+
+            return [
+                'total_deduction' => $cappedDeduction,
                 'reasons' => $group->pluck('reason')->unique()->implode(', '),
-            ]);
-        // ----------------------------------------------------
+            ];
+        })->filter();
+        
+            
+        // --- تحديث منطق جلب سجلات الأداء ---
+
+        // 1. جلب سجلات إنشاء العقوبات والتقييمات
+        $creationLogs = ActivityLog::where(function ($query) use ($teacher) {
+            $query->where(function($q) use ($teacher) {
+                $q->where('subject_type', \App\Models\Penalty::class)
+                  ->whereIn('subject_id', $teacher->penalties->pluck('id'));
+            })->orWhere(function($q) use ($teacher) {
+                $q->where('subject_type', \App\Models\PerformanceEvaluation::class)
+                  ->whereIn('subject_id', $teacher->evaluations->pluck('id'));
+            });
+        })->with('user:id,name')->latest()->get()->map(function ($log) {
+            // توحيد شكل البيانات
+            return [
+                'type' => $log->subject_type,
+                'date' => $log->created_at,
+                'user' => $log->user,
+                'details' => $log->details,
+            ];
+        });
+
+        // 2. جلب سجلات الخصم التفصيلية الجديدة
+        $deductionLogs = DeductionLog::whereIn('performance_evaluation_id', $teacher->evaluations->pluck('id'))
+            ->with(['logger:id,name', 'penalty.penaltyType', 'evaluation', 'criterion'])
+            ->latest()->get()->map(function ($log) {
+                // توحيد شكل البيانات
+                return [
+                    'type' => 'deduction_applied', // نوع مخصص للتعرف عليه في الواجهة
+                    'date' => $log->created_at,
+                    'user' => $log->logger,
+                    'details' => [
+                        'penalty_name' => $log->penalty->penaltyType->name,
+                        'evaluation_title' => $log->evaluation->title,
+                        'criterion_name' => $log->criterion->name,
+                        'points' => $log->points_deducted,
+                        'affects_salary' => $log->penalty->penaltyType->affects_salary,
+                        'deduction_amount' => $log->penalty->penaltyType->deduction_amount,
+                        'deduction_type' => $log->penalty->penaltyType->deduction_type,
+                    ],
+                ];
+            });
+
+        // 3. دمج كل السجلات، ترتيبها حسب التاريخ، وأخذ أحدث 10 منها
+        $activityLogs = $creationLogs->merge($deductionLogs)
+                                    ->sortByDesc('date')
+                                    ->values() // لإعادة بناء مفاتيح المصفوفة
+                                    ->take(10);
  
         return Inertia::render('School/Teachers/Show', [
             'teacher' => $teacher,
-            'grades' => \App\Models\AcademicYear::where('is_active', true)->first() ? Grade::where('academic_year_id', \App\Models\AcademicYear::where('is_active', true)->first()->id)->with(['sections', 'subjects:id,name'])->get() : [],
             'departments' => Department::all(['id', 'name']),
             'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
             'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($teacher),
-            'criteria' => EvaluationCriterion::where('is_active', true)->get(),
+            'criteria' => $activeCriteria,
             'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0,
             'penaltyTypes' => PenaltyType::where('is_active', true)->get(['id', 'name']),
-            'deductions' => $deductions, // <-- تمرير الخصومات المحسوبة للواجهة
+            'deductions' => $deductions,
+            'activityLogs' => $activityLogs, // إرسال السجل المدمج والنهائي
         ]);
     }
     

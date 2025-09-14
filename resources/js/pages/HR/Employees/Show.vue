@@ -10,6 +10,9 @@ const props = defineProps({
     leaveBalances: Array,
     criteria: Array,
     averageEvaluationScore: Number,
+    penaltyTypes: Array,
+    deductions: Object,
+    activityLogs: Array,
 });
 
 const page = usePage();
@@ -19,6 +22,32 @@ const canManage = computed(() => {
     return authUser.value.roles.includes('admin') || authUser.value.roles.includes('hr-manager');
 });
 const canEvaluate = computed(() => authUser.value.permissions.includes('manage evaluations'));
+const canImposePenalty = computed(() => authUser.value.permissions.includes('manage penalties'));
+
+
+// --- قسم العقوبات ---
+const showPenaltyModal = ref(false);
+const penaltyForm = useForm({
+    penalizable_id: props.employee.id,
+    penalizable_type: 'App\\Models\\Employee', // <-- النوع الصحيح للموظف
+    penalty_type_id: null,
+    reason: '',
+    issued_at: new Date().toISOString().split('T')[0],
+});
+
+const openPenaltyModal = () => {
+    penaltyForm.reset();
+    penaltyForm.penalizable_id = props.employee.id;
+    penaltyForm.penalizable_type = 'App\\Models\\Employee';
+    showPenaltyModal.value = true;
+};
+
+const submitPenalty = () => {
+    router.post(route('hr.penalties.store'), penaltyForm, {
+        onSuccess: () => { showPenaltyModal.value = false; },
+        preserveScroll: true,
+    });
+};
 
 
 // --- Evaluation Modals State ---
@@ -31,7 +60,6 @@ const openEvaluationDetailsModal = (evaluation) => {
     showEvaluationDetailsModal.value = true;
 };
 
-// --- Evaluation Form ---
 const evaluationForm = useForm({
     title: `تقييم ${new Date().getFullYear()}`,
     evaluation_date: new Date().toISOString().split('T')[0],
@@ -39,10 +67,19 @@ const evaluationForm = useForm({
     results: props.criteria.map(c => ({ criterion_id: c.id, score: 0 })),
 });
 
-const totalMaxScore = computed(() => props.criteria.reduce((total, c) => total + c.max_score, 0));
-const currentTotalScore = computed(() => evaluationForm.results.reduce((total, r) => total + Number(r.score), 0));
-const finalPercentage = computed(() => totalMaxScore.value === 0 ? 0 : ((currentTotalScore.value / totalMaxScore.value) * 100).toFixed(2));
+const getDeductionForCriterion = (criterionId) => {
+    return props.deductions[criterionId] || null;
+};
+
 const getCriterionById = (id) => props.criteria.find(c => c.id === id);
+const totalMaxScore = computed(() => props.criteria.reduce((total, c) => total + c.max_score, 0));
+// --- الحساب المحدث للدرجات مع الخصم ---
+const currentTotalScore = computed(() => evaluationForm.results.reduce((total, result) => {
+    const deduction = getDeductionForCriterion(result.criterion_id)?.total_deduction || 0;
+    const finalScore = Number(result.score) - deduction;
+    return total + (finalScore > 0 ? finalScore : 0);
+}, 0));
+const finalPercentage = computed(() => totalMaxScore.value === 0 ? 0 : ((currentTotalScore.value / totalMaxScore.value) * 100).toFixed(2));
 
 const openEvaluationModal = () => { evaluationForm.reset(); showEvaluationModal.value = true; };
 const submitEvaluation = () => { evaluationForm.post(route('hr.employees.evaluations.store', props.employee.id), { onSuccess: () => { showEvaluationModal.value = false; } }); };
@@ -511,6 +548,82 @@ const deleteExperience = (experience) => {
                         <p v-else class="text-sm text-center text-gray-500 py-4">لم يتم تعريف أنواع إجازات بعد.</p>
                     </div>
 
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <div class="flex justify-between items-center border-b pb-2 mb-4">
+                            <h3 class="text-lg font-bold text-gray-800">سجل العقوبات</h3>
+                            <button v-if="canImposePenalty" @click="openPenaltyModal" class="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-red-200">
+                                <i class="fas fa-gavel"></i> إصدار عقوبة
+                            </button>
+                        </div>
+                        <div v-if="employee.penalties && employee.penalties.length > 0" class="overflow-x-auto">
+                           <table class="min-w-full text-sm">
+                               <thead class="bg-gray-50">
+                                   <tr>
+                                       <th class="text-right p-2 font-semibold text-gray-600">العقوبة</th>
+                                       <th class="text-right p-2 font-semibold text-gray-600">التاريخ</th>
+                                       <th class="text-right p-2 font-semibold text-gray-600">المصدر</th>
+                                   </tr>
+                               </thead>
+                               <tbody class="text-gray-700">
+                                   <tr v-for="penalty in employee.penalties" :key="penalty.id" class="border-b">
+                                       <td class="p-2">
+                                           <p class="font-semibold">{{ penalty.penalty_type.name }}</p>
+                                           <p class="text-xs text-gray-500">{{ penalty.reason }}</p>
+                                       </td>
+                                       <td class="p-2">{{ new Date(penalty.issued_at).toLocaleDateString('ar-LY') }}</td>
+                                       <td class="p-2">{{ penalty.issuer.name }}</td>
+                                   </tr>
+                               </tbody>
+                           </table>
+                        </div>
+                         <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد سجل عقوبات لهذا الموظف.</p>
+                    </div>
+
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">مؤشر الأداء</h3>
+                        <div class="relative pt-4">
+                            <div class="absolute left-4 rtl:left-auto rtl:right-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                            <ul v-if="activityLogs.length > 0" class="space-y-8">
+                                <li v-for="log in activityLogs" :key="log.date + (log.details.name || log.details.penalty_name)">
+                                    <div v-if="log.type.includes('Penalty') || log.type.includes('PerformanceEvaluation')" class="flex items-start">
+                                        <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center relative" :class="log.type.includes('Penalty') ? 'bg-red-500' : 'bg-green-500'">
+                                            <i class="fas text-white" :class="log.type.includes('Penalty') ? 'fa-arrow-down' : 'fa-arrow-up'"></i>
+                                        </div>
+                                        <div class="ml-4 rtl:ml-0 rtl:mr-4 p-3 rounded-lg w-full" :class="log.type.includes('Penalty') ? 'bg-red-50' : 'bg-green-50'">
+                                            <p class="text-sm text-gray-800">
+                                                <span class="font-bold">{{ log.user.name }}</span>
+                                                {{ log.type.includes('Penalty') ? 'أصدر عقوبة' : 'أنشأ تقييم' }}:
+                                                <span class="font-semibold" :class="log.type.includes('Penalty') ? 'text-red-700' : 'text-green-700'">"{{ log.details.name }}"</span>
+                                            </p>
+                                            <p class="text-xs text-gray-500 mt-1">{{ new Date(log.date).toLocaleString('ar-LY') }}</p>
+                                        </div>
+                                    </div>
+                                    <div v-if="log.type === 'deduction_applied'" class="flex items-start">
+                                        <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center relative bg-yellow-500">
+                                            <i class="fas fa-calculator text-white"></i>
+                                        </div>
+                                        <div class="ml-4 rtl:ml-0 rtl:mr-4 p-3 rounded-lg w-full bg-yellow-50 border border-yellow-200">
+                                            <p class="text-sm text-gray-800 border-b pb-2 mb-2">
+                                                <span class="font-bold">{{ log.user.name }}</span> طبق خصماً أثناء تقييم
+                                                <span class="font-semibold text-indigo-700">"{{ log.details.evaluation_title }}"</span>.
+                                            </p>
+                                            <div class="text-xs space-y-1 text-gray-600">
+                                                <p><i class="fas fa-gavel fa-fw text-red-500"></i> <strong>العقوبة:</strong> {{ log.details.penalty_name }} <span class="font-bold text-red-700">(-{{ log.details.points }} نقطة)</span></p>
+                                                <p><i class="fas fa-tasks fa-fw text-gray-500"></i> <strong>المعيار المتأثر:</strong> {{ log.details.criterion_name }}</p>
+                                                <p v-if="log.details.affects_salary"><i class="fas fa-money-bill-wave fa-fw text-green-600"></i> <strong>تأثير على الراتب:</strong> نعم <span v-if="log.details.deduction_type === 'fixed'" class="font-bold text-green-800">(خصم {{ log.details.deduction_amount }} دينار)</span><span v-else class="font-bold text-green-800">(خصم {{ log.details.deduction_amount }}%)</span></p>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-2 text-left">{{ new Date(log.date).toLocaleString('ar-LY') }}</p>
+                                        </div>
+                                    </div>
+                                </li>
+                            </ul>
+                            <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد نشاطات مسجلة.</p>
+                        </div>
+                    </div>
+          
+          
+        
+
                 </div>
             </div>
         </div>
@@ -776,6 +889,66 @@ const deleteExperience = (experience) => {
                     <button @click="showEvaluationDetailsModal = false" class="bg-gray-200 px-4 py-2 rounded-md">إغلاق</button>
                 </div>
             </div>
+        </div>
+
+
+
+        <div v-if="showEvaluationModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <div class="bg-white rounded-lg shadow-xl p-0 w-full max-w-4xl">
+                <form @submit.prevent="submitEvaluation">
+                    <div class="p-6 border-b">
+                        <h2 class="text-2xl font-bold text-gray-800">تقييم: {{ employee.user.full_name }}</h2>
+                        <p class="text-gray-600">{{ employee.job_title }} - {{ employee.department.name }}</p>
+                    </div>
+                    <div class="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+                        <h3 class="text-lg font-semibold text-gray-800">بنود التقييم</h3>
+                        <div class="space-y-4">
+                            <div v-for="criterion in criteria" :key="criterion.id" class="p-4 bg-gray-50 rounded-lg">
+                                <label class="block font-medium text-gray-800">{{ criterion.name }}</label>
+                                <div v-if="getDeductionForCriterion(criterion.id)" class="my-2 p-2 bg-red-100 text-red-700 text-xs rounded-md">
+                                    <p class="font-bold">خصم تلقائي: -{{ getDeductionForCriterion(criterion.id).total_deduction }} درجة</p>
+                                    <p>السبب: {{ getDeductionForCriterion(criterion.id).reasons }}</p>
+                                </div>
+                                <div class="flex items-center space-x-4 rtl:space-x-reverse">
+                                    <input type="range" v-model="evaluationForm.results.find(r => r.criterion_id === criterion.id).score" :max="criterion.max_score" min="0" class="w-full">
+                                    <span class="font-bold text-indigo-600 w-24 text-center">{{ evaluationForm.results.find(r => r.criterion_id === criterion.id).score }} / {{ criterion.max_score }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                    <div class="p-6 bg-gray-50 rounded-b-lg flex justify-end space-x-2 rtl:space-x-reverse">
+                         <button type="button" @click="showEvaluationModal = false" class="bg-gray-200 px-4 py-2 rounded-md">إلغاء</button>
+                         <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md" :disabled="evaluationForm.processing">حفظ التقييم</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="showPenaltyModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+             <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+                 <div class="flex justify-between items-center border-b pb-3"><h3 class="text-xl font-bold text-gray-800">إصدار عقوبة جديدة</h3><button @click="showPenaltyModal = false" class="text-gray-500 hover:text-gray-800">&times;</button></div>
+                 <form @submit.prevent="submitPenalty" class="mt-4 space-y-4">
+                     <div>
+                         <label class="block mb-2 text-sm font-medium text-gray-900">نوع العقوبة*</label>
+                         <select v-model="penaltyForm.penalty_type_id" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required>
+                             <option :value="null" disabled>-- اختر نوع العقوبة --</option>
+                             <option v-for="type in penaltyTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
+                         </select>
+                     </div>
+                     <div>
+                         <label class="block mb-2 text-sm font-medium text-gray-900">تاريخ الإصدار*</label>
+                         <input type="date" v-model="penaltyForm.issued_at" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5" required>
+                     </div>
+                     <div>
+                         <label class="block mb-2 text-sm font-medium text-gray-900">سبب العقوبة*</label>
+                         <textarea rows="4" v-model="penaltyForm.reason" class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300" required></textarea>
+                     </div>
+                     <div class="flex justify-end pt-4 border-t space-x-2 rtl:space-x-reverse">
+                         <button type="button" @click="showPenaltyModal = false" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">إلغاء</button>
+                         <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700" :disabled="penaltyForm.processing">تأكيد إصدار العقوبة</button>
+                     </div>
+                 </form>
+             </div>
         </div>
 
     </HrLayout>

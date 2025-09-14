@@ -32,7 +32,7 @@ Route::middleware(['auth', 'verified'])->prefix('school')->name('school.')->grou
     Route::post('teachers/{teacher}/leaves', [TeacherController::class, 'storeLeave'])->name('teachers.leaves.store');
   
       // Subjects Management
-      Route::resource('subjects', SubjectController::class)->except(['show', 'create', 'edit']);
+      // Route::resource('subjects', SubjectController::class)->except(['show', 'create', 'edit']);
       Route::post('grades/assign-subjects', [GradeSubjectController::class, 'store'])->name('grades.assign.subjects');
     // --- Teacher Contract Management ---
     Route::resource('teacher-contracts', TeacherContractController::class)->except(['create', 'show', 'edit', 'index']);

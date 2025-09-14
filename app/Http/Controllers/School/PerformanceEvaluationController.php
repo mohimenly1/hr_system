@@ -9,8 +9,13 @@ use App\Models\Teacher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Redirect;
+use Inertia\Inertia;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Redirect;
+use App\Models\AcademicYear;
+use Illuminate\Support\Facades\Log;
+use App\Models\DeductionLog;
+use Carbon\Carbon;
 
 class PerformanceEvaluationController extends Controller
 {
@@ -29,46 +34,86 @@ class PerformanceEvaluationController extends Controller
             'results.*.criterion_id' => 'required|exists:evaluation_criteria,id',
             'results.*.score' => 'required|integer|min:0',
         ]);
-
+    
         DB::beginTransaction();
-        try {
+    try {
+        // --- تعديل طريقة حساب الخصومات للاحتفاظ بتفاصيل العقوبات ---
+        $evaluationDate = Carbon::parse($validated['evaluation_date']);
+
+        // --- التعديل هنا: جلب العقوبات الخاصة بنفس شهر وسنة التقييم فقط ---
+        $penaltiesWithCriteria = $teacher->penalties()
+            ->whereYear('issued_at', $evaluationDate->year)
+            ->whereMonth('issued_at', $evaluationDate->month)
+            ->with('penaltyType.criteria')
+            ->get();
+            $deductionsByCriterion = [];
+            foreach ($penaltiesWithCriteria as $penalty) {
+                foreach ($penalty->penaltyType->criteria as $criterion) {
+                    if (!isset($deductionsByCriterion[$criterion->id])) {
+                        $deductionsByCriterion[$criterion->id] = [];
+                    }
+                    $deductionsByCriterion[$criterion->id][] = [
+                        'penalty_id' => $penalty->id,
+                        'points' => $criterion->pivot->deduction_points,
+                    ];
+                }
+            }
+        
             $evaluation = $teacher->evaluations()->create([
                 'title' => $validated['title'],
                 'evaluation_date' => $validated['evaluation_date'],
                 'overall_notes' => $validated['overall_notes'],
             ]);
+    
 
-            $totalMaxScore = 0;
-            $totalUserScore = 0;
+        $totalMaxScore = 0;
+        $finalTotalScore = 0;
 
-            foreach ($validated['results'] as $resultData) {
-                $criterion = EvaluationCriterion::find($resultData['criterion_id']);
-                if ($resultData['score'] > $criterion->max_score) {
-                    $resultData['score'] = $criterion->max_score;
-                }
-
-                $scoreField = $user->hasAnyRole(['admin', 'hr-manager']) ? 'admin_score' : 'manager_score';
-                
-                $evaluation->results()->create([
-                    'evaluation_criterion_id' => $criterion->id,
-                    $scoreField => $resultData['score'],
-                ]);
-                
-                $totalMaxScore += $criterion->max_score;
-                $totalUserScore += $resultData['score'];
-            }
+        foreach ($validated['results'] as $resultData) {
+            $criterion = EvaluationCriterion::find($resultData['criterion_id']);
+            $userScore = min($resultData['score'], $criterion->max_score);
             
-            $finalPercentage = ($totalMaxScore > 0) ? ($totalUserScore / $totalMaxScore) * 100 : 0;
-            $evaluation->final_score_percentage = round($finalPercentage, 2);
-            $evaluation->save();
+            $finalScore = $userScore;
 
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', 'حدث خطأ أثناء حفظ التقييم: ' . $e->getMessage());
+            if (isset($deductionsByCriterion[$criterion->id])) {
+                foreach ($deductionsByCriterion[$criterion->id] as $deduction) {
+                    $pointsToDeduct = $deduction['points'];
+                    $finalScore -= $pointsToDeduct;
+
+                    DeductionLog::create([
+                        'performance_evaluation_id' => $evaluation->id,
+                        'penalty_id' => $deduction['penalty_id'],
+                        'evaluation_criterion_id' => $criterion->id,
+                        'logged_by_user_id' => $user->id,
+                        'points_deducted' => $pointsToDeduct,
+                    ]);
+                }
+            }
+
+            $finalScore = max(0, $finalScore);
+            $scoreField = $user->hasAnyRole(['admin', 'hr-manager']) ? 'admin_score' : 'manager_score';
+            
+            $evaluation->results()->create([
+                'evaluation_criterion_id' => $criterion->id,
+                $scoreField => $finalScore,
+            ]);
+            
+            $totalMaxScore += $criterion->max_score;
+            $finalTotalScore += $finalScore;
         }
+        
+        $finalPercentage = ($totalMaxScore > 0) ? ($finalTotalScore / $totalMaxScore) * 100 : 0;
+        $evaluation->final_score_percentage = round($finalPercentage, 2);
+        $evaluation->save();
 
-        return Redirect::route('school.teachers.show', $teacher)->with('success', 'تم حفظ التقييم بنجاح.');
+        DB::commit();
+    } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Evaluation creation failed: ' . $e->getMessage()); // تسجيل الخطأ للمطورين
+            return back()->with('error', 'حدث خطأ غير متوقع أثناء حفظ التقييم.'); // رسالة عامة للمستخدم
+        }
+    
+        return Redirect::route('school.teachers.show', $teacher)->with('success', 'تم حفظ التقييم وتطبيق الخصومات بنجاح.');
     }
 }
 

@@ -1,0 +1,109 @@
+<script setup>
+import HrLayout from '@/layouts/HrLayout.vue';
+import { Head, useForm, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
+
+const props = defineProps({
+    documentTypes: Array,
+});
+
+const showModal = ref(false);
+const isEditing = ref(false);
+
+const form = useForm({
+    id: null,
+    name: '',
+    description: '',
+});
+
+const openCreateModal = () => {
+    isEditing.value = false;
+    form.reset();
+    showModal.value = true;
+};
+
+const openEditModal = (docType) => {
+    isEditing.value = true;
+    form.id = docType.id;
+    form.name = docType.name;
+    form.description = docType.description;
+    showModal.value = true;
+};
+
+const submitForm = () => {
+    const action = isEditing.value
+        ? form.put(route('documents.settings.document-types.update', form.id))
+        : form.post(route('documents.settings.document-types.store'));
+    
+    action.then(() => {
+        if (!form.hasErrors) {
+            showModal.value = false;
+        }
+    });
+};
+
+const deleteItem = (id) => {
+    if (confirm('هل أنت متأكد من حذف هذا النوع؟')) {
+        router.delete(route('documents.settings.document-types.destroy', id));
+    }
+};
+</script>
+
+<template>
+    <Head title="إعدادات أنواع الوثائق" />
+    <HrLayout>
+        <template #header>إعدادات أنواع الوثائق</template>
+
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">أنواع الوثائق</h2>
+                <button @click="openCreateModal" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 flex items-center">
+                    <i class="fas fa-plus mr-2"></i> إضافة نوع جديد
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="py-3 px-4 text-right text-sm font-semibold text-gray-600">الاسم</th>
+                            <th class="py-3 px-4 text-right text-sm font-semibold text-gray-600">الوصف</th>
+                            <th class="py-3 px-4 text-center text-sm font-semibold text-gray-600">الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-700">
+                        <tr v-for="dt in documentTypes" :key="dt.id" class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 font-medium">{{ dt.name }}</td>
+                            <td class="py-3 px-4">{{ dt.description }}</td>
+                            <td class="py-3 px-4 text-center space-x-2 rtl:space-x-reverse">
+                                <button @click="openEditModal(dt)" class="text-blue-600 hover:text-blue-800">تعديل</button>
+                                <button @click="deleteItem(dt.id)" class="text-red-600 hover:text-red-800">حذف</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Modal -->
+        <div v-if="showModal" class="fixed inset-0 bg-black/40 z-50 flex justify-center items-center p-4">
+             <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">{{ isEditing ? 'تعديل النوع' : 'إضافة نوع جديد' }}</h3>
+                <form @submit.prevent="submitForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-800">الاسم</label>
+                        <input type="text" v-model="form.name" class="mt-1 block w-full rounded-md" required>
+                    </div>
+                     <div>
+                        <label class="block text-sm font-medium text-gray-800">الوصف</label>
+                        <textarea v-model="form.description" rows="3" class="mt-1 block w-full rounded-md"></textarea>
+                    </div>
+                    <div class="pt-4 flex justify-end space-x-2 rtl:space-x-reverse border-t">
+                        <button type="button" @click="showModal = false" class="bg-gray-200 px-4 py-2 rounded-md">إلغاء</button>
+                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md" :disabled="form.processing">حفظ</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </HrLayout>
+</template>

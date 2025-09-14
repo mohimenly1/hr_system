@@ -9,10 +9,11 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Log; // <-- إضافة مهمة
 
 class PenaltySettingsController extends Controller
 {
-    use AuthorizesRequests; // <-- إضافة السمة اللازمة
+    use AuthorizesRequests;
 
     public function index()
     {
@@ -42,15 +43,28 @@ class PenaltySettingsController extends Controller
     {
         $this->authorize('update', $penalty_type);
 
+        Log::debug("================ PENALTY UPDATE START ================");
+        Log::debug("PENALTY_UPDATE_DEBUG: Attempting to update PenaltyType ID: {$penalty_type->id}");
+        Log::debug("PENALTY_UPDATE_DEBUG: Incoming request data:", $request->all());
+
         $validated = $request->validate($this->validationRules($penalty_type->id));
+        
+        Log::debug("PENALTY_UPDATE_DEBUG: Data passed validation:", $validated);
 
         $penalty_type->update($validated);
+        
+        Log::debug("PENALTY_UPDATE_DEBUG: Main penalty type model updated in DB.");
+
         if ($validated['affects_evaluation'] && isset($validated['criteria_deductions'])) {
+            Log::debug("PENALTY_UPDATE_DEBUG: 'affects_evaluation' is true. Syncing criteria...");
             $this->syncCriteria($penalty_type, $validated['criteria_deductions']);
+            Log::debug("PENALTY_UPDATE_DEBUG: Criteria sync process completed.");
         } else {
+            Log::debug("PENALTY_UPDATE_DEBUG: 'affects_evaluation' is false. Detaching all criteria.");
             $penalty_type->criteria()->detach();
         }
 
+        Log::debug("================ PENALTY UPDATE END ================");
         return Redirect::back()->with('success', 'تم تحديث نوع العقوبة بنجاح.');
     }
 
@@ -72,9 +86,14 @@ class PenaltySettingsController extends Controller
 
     private function syncCriteria(PenaltyType $penaltyType, array $deductions): void
     {
-        $syncData = collect($deductions)->mapWithKeys(function ($item) {
-            return [$item['id'] => ['deduction_points' => $item['points']]];
-        });
+        $syncData = collect($deductions)
+            // --- هذا هو السطر الجديد الذي يحل المشكلة ---
+            ->filter(fn($item) => isset($item['points']) && $item['points'] > 0)
+            ->mapWithKeys(function ($item) {
+                return [$item['id'] => ['deduction_points' => $item['points']]];
+            });
+    
+        Log::debug("PENALTY_UPDATE_DEBUG: Data prepared for sync after filtering:", $syncData->toArray());
         $penaltyType->criteria()->sync($syncData);
     }
 }

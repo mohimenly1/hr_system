@@ -5,7 +5,6 @@ import { Link, usePage } from '@inertiajs/vue3';
 const page = usePage();
 
 const hasPermission = (permission) => {
-    // --- THE FIX: Use the correct path to access permissions ---
     if (!page.props.auth || !page.props.auth.user || !page.props.auth.user.permissions) {
         return false; 
     }
@@ -21,11 +20,6 @@ const hasAnyPermission = (permissions) => {
     }
     return false;
 };
-
-const isSettingsMenuOpen = ref(false);
-const toggleSettingsMenu = () => {
-    isSettingsMenuOpen.value = !isSettingsMenuOpen.value;
-};
 </script>
 
 <template>
@@ -35,7 +29,8 @@ const toggleSettingsMenu = () => {
             <div class="p-4 text-2xl font-bold border-b border-gray-700">
                 لوحة التحكم
             </div>
-            <nav class="mt-4 px-2 flex-grow">
+            <!-- ### التعديل هنا: جعل القائمة قابلة للتمرير ### -->
+            <nav class="mt-4 px-2 flex-grow overflow-y-auto">
                 <!-- HR Management Section -->
                 <div class="mb-4">
                     <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">إدارة الموارد البشرية</h3>
@@ -78,8 +73,21 @@ const toggleSettingsMenu = () => {
                     </div>
                 </div>
 
+                <!-- ### التعديل هنا: تبسيط قسم المراسلات ### -->
+                <div v-if="hasPermission('view documents')" class="mb-4">
+                    <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">إدارة المراسلات</h3>
+                    <div class="mt-2 space-y-1">
+                        <Link :href="route('documents.index')" 
+                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents') }" 
+                              class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-exchange-alt fa-fw w-6 text-center"></i>
+                            <span class="ml-3">سجل المراسلات</span>
+                        </Link>
+                    </div>
+                </div>
+
                 <!-- Settings & Integrations -->
-                 <div v-if="hasAnyPermission(['manage roles', 'manage users', 'access integrations'])">
+                 <div v-if="hasAnyPermission(['manage roles', 'manage users', 'access integrations', 'manage document settings'])">
                     <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">الإعدادات والتكاملات</h3>
                     <div class="mt-2 space-y-1">
                          <Link v-if="hasPermission('manage users')" :href="route('hr.users.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/Users') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
@@ -116,12 +124,29 @@ const toggleSettingsMenu = () => {
                         <span class="ml-3">إعدادات العقوبات</span>
                     </Link>
 
+                    <!-- ### إضافة إعدادات المراسلات ### -->
+                     <div v-if="hasPermission('manage document settings')">
+                        <h4 class="px-2 mt-4 mb-2 text-xs font-semibold text-indigo-300">إعدادات المراسلات</h4>
+                        <Link :href="route('documents.settings.document-types.index')" 
+                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents/Settings/DocumentTypes') }" 
+                              class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-file-alt fa-fw w-6 text-center"></i>
+                            <span class="ml-3">أنواع الوثائق</span>
+                        </Link>
+                        <Link :href="route('documents.settings.external-parties.index')" 
+                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents/Settings/ExternalParties') }" 
+                              class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-sitemap fa-fw w-6 text-center"></i>
+                            <span class="ml-3">الجهات الخارجية</span>
+                        </Link>
+                     </div>
+
                     </div>
                 </div>
             </nav>
 
             <!-- Logout Button -->
-            <div class="px-2 py-4 border-t border-gray-700">
+            <div class="px-2 py-4 border-t border-gray-700 mt-auto">
                  <Link :href="route('logout')" method="post" as="button" class="w-full flex items-center px-2 py-2 text-sm font-medium rounded-md text-red-400 hover:bg-red-500 hover:text-white">
                     <i class="fas fa-sign-out-alt fa-fw w-6 text-center"></i>
                     <span class="ml-3">تسجيل الخروج</span>

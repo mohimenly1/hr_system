@@ -38,7 +38,9 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
         Route::resource('leave-settings', LeaveSettingsController::class)->only(['index', 'store', 'update']);
         Route::resource('evaluation-settings', EvaluationSettingsController::class)->only(['index', 'store', 'update']);
         Route::post('employees/{employee}/evaluations', [EmployeePerformanceEvaluationController::class, 'store'])->name('employees.evaluations.store');
-        Route::resource('penalty-settings', PenaltySettingsController::class)->only(['index', 'store', 'update']);
+        Route::resource('penalty-settings', PenaltySettingsController::class)
+        ->parameters(['penalty-settings' => 'penalty_type'])
+        ->only(['index', 'store', 'update']);
         Route::post('penalties', [PenaltyController::class, 'store'])->name('penalties.store');
         // --- Integrations & Advanced Settings ---
         Route::prefix('integrations')->name('integrations.')->group(function() {

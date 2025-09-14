@@ -11,18 +11,22 @@ const props = defineProps({
     managedDepartments: Array,
     activeDepartment: Object,
     userRole: String,
+    // --- PROPS الجديدة لإحصائيات الأداء ---
+    topPerformers: Array,
+    lowestPerformers: Array,
+    penaltyStats: Array,
 });
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
 
-// --- NEW State for Custom Department Filter ---
+// --- فلتر الأقسام لمدير القسم ---
 const isDeptFilterOpen = ref(false);
 const selectedDepartment = ref(props.activeDepartment ? props.activeDepartment.id : null);
 
 const selectDepartment = (deptId) => {
     selectedDepartment.value = deptId;
-    isDeptFilterOpen.value = false; // Close dropdown on selection
+    isDeptFilterOpen.value = false;
 };
 
 watch(selectedDepartment, (newDeptId) => {
@@ -31,7 +35,7 @@ watch(selectedDepartment, (newDeptId) => {
     }
 });
 
-// --- Live Clock & Date Logic ---
+// --- الساعة والتاريخ المباشر ---
 const currentTime = ref('');
 const currentDate = ref('');
 let intervalId = null;
@@ -49,23 +53,27 @@ const welcomeMessage = computed(() => {
     return 'مساء الخير';
 });
 
-// --- Chart Logic ---
+// --- منطق المخططات البيانية ---
 const departmentChartCanvas = ref(null);
 const attendanceChartCanvas = ref(null);
 let attendanceChartInstance = null;
 
+// في ملف Dashboard.vue
 const updateAttendanceChart = () => {
     if (attendanceChartInstance) {
         attendanceChartInstance.destroy();
     }
+    // هذا الشرط يحمي من الحالة التي تكون فيها المصفوفة بأكملها غير موجودة
     if (attendanceChartCanvas.value && props.attendanceLastWeek) {
         attendanceChartInstance = new Chart(attendanceChartCanvas.value, {
             type: 'bar',
             data: {
-                labels: props.attendanceLastWeek.map(a => a.date),
+                // --- التعديل هنا ---
+                // التحقق من أن العنصر 'a' ليس null قبل الوصول لخصائصه
+                labels: props.attendanceLastWeek.map(a => a ? a.date : ''),
                 datasets: [
-                    { label: 'حاضر', data: props.attendanceLastWeek.map(a => a.present), backgroundColor: 'rgba(16, 185, 129, 0.5)', borderColor: 'rgba(16, 185, 129, 1)', borderWidth: 1 },
-                    { label: 'غائب', data: props.attendanceLastWeek.map(a => a.absent), backgroundColor: 'rgba(239, 68, 68, 0.5)', borderColor: 'rgba(239, 68, 68, 1)', borderWidth: 1 }
+                    { label: 'حاضر', data: props.attendanceLastWeek.map(a => a ? a.present : 0), backgroundColor: 'rgba(16, 185, 129, 0.5)', borderColor: 'rgba(16, 185, 129, 1)', borderWidth: 1 },
+                    { label: 'غائب', data: props.attendanceLastWeek.map(a => a ? a.absent : 0), backgroundColor: 'rgba(239, 68, 68, 0.5)', borderColor: 'rgba(239, 68, 68, 1)', borderWidth: 1 }
                 ]
             },
             options: {
@@ -81,7 +89,7 @@ onMounted(() => {
     updateDateTime();
     intervalId = setInterval(updateDateTime, 1000);
 
-    // Employees Per Department Chart
+    // مخطط توزيع الموظفين
     if (departmentChartCanvas.value && props.userRole === 'admin') {
         new Chart(departmentChartCanvas.value, {
             type: 'doughnut', data: { labels: props.employeesPerDepartment.map(d => d.name), datasets: [{ data: props.employeesPerDepartment.map(d => d.count), backgroundColor: ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'], hoverOffset: 4 }] },
@@ -111,15 +119,13 @@ onUnmounted(() => {
             <span v-else>لوحة التحكم الرئيسية</span>
         </template>
         
-        <!-- NEW App Bar -->
         <div class="bg-white shadow-md rounded-lg p-4 mb-8 flex justify-between items-center">
             <div>
                 <h2 class="text-2xl font-bold text-gray-800">{{ welcomeMessage }}، {{ user.name }}!</h2>
                 <p class="text-gray-500">دورك الحالي: <span class="font-semibold text-indigo-600">{{ user.roles[0] }}</span></p>
             </div>
             
-             <!-- NEW Custom Department Switcher -->
-            <div v-if="userRole == 'department-manager' && managedDepartments.length > 1" class="relative">
+            <div v-if="managedDepartments && managedDepartments.length > 1" class="relative">
                 <button @click="isDeptFilterOpen = !isDeptFilterOpen" class="flex items-center space-x-2 rtl:space-x-reverse bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 font-semibold py-2 px-4 rounded-lg transition shadow-sm">
                     <i class="fas fa-building text-indigo-500"></i>
                     <span>عرض قسم: {{ activeDepartment.name }}</span>
@@ -145,8 +151,6 @@ onUnmounted(() => {
             </div>
         </div>
 
-
-        <!-- Stats Cards -->
         <div v-if="stats.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div v-for="stat in stats" :key="stat.name" class="bg-white overflow-hidden shadow-lg rounded-xl p-6 flex items-center space-x-4 rtl:space-x-reverse">
                 <div class="bg-indigo-100 p-4 rounded-full">
@@ -158,15 +162,59 @@ onUnmounted(() => {
                 </div>
             </div>
         </div>
-        <div v-else class="text-center bg-white p-8 rounded-lg shadow-md mb-8">
+        <!-- <div v-else class="text-center bg-white p-8 rounded-lg shadow-md mb-8">
             <h3 class="text-xl font-bold text-gray-800">مرحباً بك</h3>
             <p class="text-gray-500 mt-2">لا توجد بيانات لعرضها حالياً. قد تكون غير معين كمدير لأي قسم.</p>
+        </div> -->
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white overflow-hidden shadow-lg rounded-xl p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-arrow-trend-up text-green-500 mr-2 rtl:ml-2"></i> أفضل أداء (آخر 6 أشهر)
+                </h3>
+                <ul v-if="topPerformers && topPerformers.length > 0" class="space-y-3">
+                    <li v-for="performer in topPerformers" :key="performer.id" class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <span class="font-semibold text-gray-700">{{ performer.evaluable.user.name }}</span>
+                            <span v-if="userRole === 'admin'" class="text-xs text-gray-500 mr-2 rtl:ml-2">({{ performer.evaluable.department?.name || 'N/A' }})</span>
+                        </div>
+                        <span class="font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full text-sm">{{ performer.final_score_percentage }}%</span>
+                    </li>
+                </ul>
+                <p v-else class="text-sm text-gray-500 text-center py-4">لا توجد تقييمات حديثة.</p>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow-lg rounded-xl p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-arrow-trend-down text-red-500 mr-2 rtl:ml-2"></i> الأقل أداءً (آخر 6 أشهر)
+                </h3>
+                <ul v-if="lowestPerformers && lowestPerformers.length > 0" class="space-y-3">
+                    <li v-for="evaluation in lowestPerformers" :key="evaluation.id" class="flex items-center justify-between">
+                        <div class="flex items-center">
+                           <span class="font-semibold text-gray-700">{{ evaluation.evaluable.user.name }}</span>
+                           <span v-if="userRole === 'admin'" class="text-xs text-gray-500 mr-2 rtl:ml-2">({{ evaluation.evaluable.department?.name || 'N/A' }})</span>
+                        </div>
+                        <span class="font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full text-sm">{{ evaluation.final_score_percentage }}%</span>
+                    </li>
+                </ul>
+                <p v-else class="text-sm text-gray-500 text-center py-4">لا توجد تقييمات حديثة.</p>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow-lg rounded-xl p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-gavel text-yellow-500 mr-2 rtl:ml-2"></i> اكثر عقوبات سارية
+                </h3>
+                <ul v-if="penaltyStats && penaltyStats.length > 0" class="space-y-3">
+                    <li v-for="pen in penaltyStats" :key="pen.name" class="flex items-center justify-between">
+                        <span class="font-semibold text-gray-700">{{ pen.name }}</span>
+                        <span class="font-bold text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full text-sm">{{ pen.count }} مرة</span>
+                    </li>
+                </ul>
+                 <p v-else class="text-sm text-gray-500 text-center py-4">لا توجد عقوبات مسجلة.</p>
+            </div>
         </div>
 
-
-        <!-- Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-            <!-- Admin View -->
             <template v-if="userRole === 'admin'">
                 <div class="lg:col-span-3 bg-white shadow-lg rounded-xl p-6">
                     <div class="h-96"><canvas ref="attendanceChartCanvas"></canvas></div>
@@ -175,7 +223,6 @@ onUnmounted(() => {
                     <div class="h-96"><canvas ref="departmentChartCanvas"></canvas></div>
                 </div>
             </template>
-            <!-- Department Manager View -->
             <template v-if="userRole === 'department-manager'">
                  <div class="lg:col-span-5 bg-white shadow-lg rounded-xl p-6">
                     <div class="h-96"><canvas ref="attendanceChartCanvas"></canvas></div>
@@ -184,4 +231,3 @@ onUnmounted(() => {
         </div>
     </HrLayout>
 </template>
-

@@ -30,6 +30,9 @@
     },
     "dependencies": {
         "@inertiajs/vue3": "^2.1.0",
+        "@tiptap/extension-text-align": "^3.4.2",
+        "@tiptap/starter-kit": "^3.4.2",
+        "@tiptap/vue-3": "^3.4.2",
         "@vueuse/core": "^12.8.2",
         "chart.js": "^4.5.0",
         "class-variance-authority": "^0.7.1",

@@ -59,7 +59,7 @@ const confirmClearUsers = () => {
                         </div>
                     </div>
                     <div class="mt-6">
-                         <Link :href="route('hr.fingerprint.test')" method="get" as="button" class="w-full bg-gray-600 text-white py-2 rounded-md hover:bg-gray-700 font-semibold">
+                         <Link :href="route('hr.integrations.fingerprint.test')" method="get" as="button" class="w-full bg-gray-600 text-white py-2 rounded-md hover:bg-gray-700 font-semibold">
                             بدء اختبار الاتصال
                         </Link>
                     </div>
@@ -127,7 +127,7 @@ const confirmClearUsers = () => {
                         </div>
                     </div>
                     <div class="mt-6">
-                         <Link :href="route('hr.fingerprint.sync.users')" method="post" as="button" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 font-semibold">
+                         <Link :href="route('hr.integrations.fingerprint.sync.users')" method="post" as="button" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 font-semibold">
                             بدء مزامنة المستخدمين
                         </Link>
                     </div>
@@ -156,7 +156,7 @@ const confirmClearUsers = () => {
             <div class="bg-white shadow-md rounded-lg">
                 <div class="p-6 border-b flex justify-between items-center">
                     <h3 class="text-xl font-bold text-gray-800">المستخدمون المسجلون في الجهاز</h3>
-                     <Link :href="route('hr.fingerprint.device.users')" method="get" as="button" class="text-sm bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 font-semibold">
+                     <Link :href="route('hr.integrations.fingerprint.device.users')" method="get" as="button" class="text-sm bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 font-semibold">
                         تحديث القائمة
                     </Link>
                 </div>

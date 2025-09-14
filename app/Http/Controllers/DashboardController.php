@@ -11,7 +11,12 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\DB;
+use App\Models\PerformanceEvaluation;
+use App\Models\Penalty;
+use App\Models\Teacher;
 use Inertia\Response;
+
 
 class DashboardController extends Controller
 {
@@ -32,6 +37,7 @@ class DashboardController extends Controller
 
     private function adminDashboard(): Response
     {
+        // --- الإحصائيات العامة ---
         $employeeCount = Employee::where('employment_status', 'active')->count();
         $departmentCount = Department::count();
         $pendingLeavesCount = Leave::where('status', 'pending')->count();
@@ -40,6 +46,7 @@ class DashboardController extends Controller
             ->where('end_date', '>=', today())
             ->count();
 
+        // --- بيانات المخططات البيانية ---
         $employeesPerDepartment = Department::withCount(['employees' => fn ($q) => $q->where('employment_status', 'active')])
             ->get(['name', 'employees_count'])
             ->map(fn ($dept) => ['name' => $dept->name, 'count' => $dept->employees_count]);
@@ -51,6 +58,33 @@ class DashboardController extends Controller
             return ['date' => $date->format('M d'), 'present' => $present, 'absent' => $absent];
         });
 
+        // --- إحصائيات الأداء ---
+        $recentEvaluationsScope = PerformanceEvaluation::with(['evaluable.user', 'evaluable.department'])
+                                ->where('evaluation_date', '>=', now()->subMonths(6));
+
+        $topPerformers = (clone $recentEvaluationsScope)->orderByDesc('final_score_percentage')->limit(5)->get();
+        $lowestPerformers = (clone $recentEvaluationsScope)->orderBy('final_score_percentage')->limit(5)->get();
+
+        $penaltyStats = Penalty::join('penalty_types', 'penalties.penalty_type_id', '=', 'penalty_types.id')
+            ->select('penalty_types.name', DB::raw('count(penalties.id) as count'))
+            ->groupBy('penalty_types.name')
+            ->orderByDesc('count')
+            ->limit(5)
+            ->get();
+
+        // --- التحقق إذا كان المدير العام هو أيضاً مدير قسم ---
+        $user = Auth::user();
+        $managedDepartments = [];
+        $activeDepartment = null;
+
+        if ($user->hasRole('department-manager')) {
+            $managedDepartments = Department::where('manager_id', $user->id)->get();
+            if ($managedDepartments->isNotEmpty()) {
+                // لا نحتاج لفلترة بيانات المدير العام، فقط نرسل الأقسام للفلتر في الواجهة
+                $activeDepartment = $managedDepartments->first(); 
+            }
+        }
+
         return Inertia::render('Dashboard', [
             'stats' => [
                 ['name' => 'الموظفين النشطين', 'value' => $employeeCount, 'icon' => 'fas fa-users'],
@@ -60,9 +94,15 @@ class DashboardController extends Controller
             ],
             'employeesPerDepartment' => $employeesPerDepartment,
             'attendanceLastWeek' => $attendanceLastWeek,
+            'topPerformers' => $topPerformers,
+            'lowestPerformers' => $lowestPerformers,
+            'penaltyStats' => $penaltyStats,
             'userRole' => 'admin',
+            'managedDepartments' => $managedDepartments,
+            'activeDepartment' => $activeDepartment,
         ]);
     }
+
 
     private function departmentManagerDashboard(User $user, Request $request): Response
     {
@@ -108,6 +148,29 @@ class DashboardController extends Controller
             return ['date' => $date->format('M d'), 'present' => $present, 'absent' => $absent];
         });
 
+         // --- الإحصائيات الجديدة الخاصة بمدير القسم ---
+         $personnelQuery = function ($query) use ($activeDepartment) {
+            $query->where('department_id', $activeDepartment->id);
+        };
+
+        $recentEvaluationsScope = PerformanceEvaluation::whereHasMorph('evaluable', [Employee::class, Teacher::class], $personnelQuery)
+                                    ->with(['evaluable.user'])
+                                    ->where('evaluation_date', '>=', now()->subMonths(6));
+        
+        $topPerformers = (clone $recentEvaluationsScope)->orderByDesc('final_score_percentage')->limit(3)->get();
+        $lowestPerformers = (clone $recentEvaluationsScope)->orderBy('final_score_percentage')->limit(3)->get();
+        
+        $penaltyStats = Penalty::whereHasMorph('penalizable', [Employee::class, Teacher::class], $personnelQuery)
+            ->join('penalty_types', 'penalties.penalty_type_id', '=', 'penalty_types.id')
+            ->select('penalty_types.name', DB::raw('count(penalties.id) as count'))
+            ->groupBy('penalty_types.name')
+            ->orderByDesc('count')
+            ->limit(3)
+            ->get();
+
+
+        
+
         return Inertia::render('Dashboard', [
             'stats' => [
                 ['name' => 'الأعضاء في القسم', 'value' => $personnelCount, 'icon' => 'fas fa-users'],
@@ -118,6 +181,10 @@ class DashboardController extends Controller
             'managedDepartments' => $managedDepartments,
             'activeDepartment' => $activeDepartment,
             'userRole' => 'department-manager',
+             // --- إرسال البيانات الجديدة ---
+             'topPerformers' => $topPerformers,
+             'lowestPerformers' => $lowestPerformers,
+             'penaltyStats' => $penaltyStats,
         ]);
     }
 }

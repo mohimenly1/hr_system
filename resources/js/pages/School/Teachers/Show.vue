@@ -13,6 +13,7 @@ const props = defineProps({
     averageEvaluationScore: Number,
     penaltyTypes: Array, // <-- استقبال أنواع العقوبات
     deductions: Object, // <-- استقبال الخصومات
+    activityLogs: Array, // <-- استقبال سجل النشاطات
 });
 
 
@@ -83,13 +84,20 @@ const getDeductionForCriterion = (criterionId) => {
 };
 
 
-const totalMaxScore = computed(() => props.criteria.reduce((total, criterion) => total + criterion.max_score, 0));
-const currentTotalScore = computed(() => evaluationForm.results.reduce((total, result) => total + Number(result.score), 0));
+const getCriterionById = (id) => props.criteria.find(c => c.id === id);
+
+const totalMaxScore = computed(() => props.criteria.reduce((total, c) => total + c.max_score, 0));
+const currentTotalScore = computed(() => evaluationForm.results.reduce((total, result) => {
+    const criterion = getCriterionById(result.criterion_id);
+    const deduction = getDeductionForCriterion(result.criterion_id)?.total_deduction || 0;
+    const finalScore = Number(result.score) - deduction;
+    return total + (finalScore > 0 ? finalScore : 0);
+}, 0));
 const finalPercentage = computed(() => {
     if (totalMaxScore.value === 0) return 0;
     return ((currentTotalScore.value / totalMaxScore.value) * 100).toFixed(2);
 });
-const getCriterionById = (id) => props.criteria.find(c => c.id === id);
+
 
 const openEvaluationModal = () => {
     evaluationForm.reset();
@@ -585,6 +593,65 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                          <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد سجل عقوبات لهذا المعلم.</p>
                     </div>
 
+                    <!-- NEW Activity Log Card -->
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-2 mb-4">مؤشر الأداء</h3>
+                        <div class="relative pt-4">
+                            <!-- Timeline Line -->
+                            <div class="absolute left-4 rtl:left-auto rtl:right-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                            
+                            <ul v-if="activityLogs.length > 0" class="space-y-8">
+                               <li v-for="log in activityLogs" :key="log.id" class="flex items-start">
+                                <li v-if="log.type.includes('Penalty') || log.type.includes('PerformanceEvaluation')" :key="log.date + log.details.name" class="flex items-start">
+    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center relative"
+         :class="log.type.includes('Penalty') ? 'bg-red-500' : 'bg-green-500'">
+        <i class="fas text-white" :class="log.type.includes('Penalty') ? 'fa-arrow-down' : 'fa-arrow-up'"></i>
+    </div>
+    <div class="ml-4 rtl:ml-0 rtl:mr-4 p-3 rounded-lg w-full" :class="log.type.includes('Penalty') ? 'bg-red-50' : 'bg-green-50'">
+        <p class="text-sm text-gray-800">
+            <span class="font-bold">{{ log.user.name }}</span>
+            {{ log.type.includes('Penalty') ? 'أصدر عقوبة' : 'أنشأ تقييم' }}:
+            <span class="font-semibold" :class="log.type.includes('Penalty') ? 'text-red-700' : 'text-green-700'">"{{ log.details.name }}"</span>
+        </p>
+        <p class="text-xs text-gray-500 mt-1">{{ new Date(log.date).toLocaleString('ar-LY') }}</p>
+    </div>
+</li>
+
+<li v-if="log.type === 'deduction_applied'" :key="log.date + log.details.penalty_name" class="flex items-start">
+    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center relative bg-yellow-500">
+        <i class="fas fa-calculator text-white"></i>
+    </div>
+    <div class="ml-4 rtl:ml-0 rtl:mr-4 p-3 rounded-lg w-full bg-yellow-50 border border-yellow-200">
+        <p class="text-sm text-gray-800 border-b pb-2 mb-2">
+            <span class="font-bold">{{ log.user.name }}</span> طبق خصماً أثناء تقييم
+            <span class="font-semibold text-indigo-700">"{{ log.details.evaluation_title }}"</span>.
+        </p>
+        <div class="text-xs space-y-1 text-gray-600">
+            <p>
+                <i class="fas fa-gavel fa-fw text-red-500"></i>
+                <strong>العقوبة:</strong> {{ log.details.penalty_name }}
+                <span class="font-bold text-red-700">(-{{ log.details.points }} نقطة)</span>
+            </p>
+            <p>
+                <i class="fas fa-tasks fa-fw text-gray-500"></i>
+                <strong>المعيار المتأثر:</strong> {{ log.details.criterion_name }}
+            </p>
+            <p v-if="log.details.affects_salary">
+                <i class="fas fa-money-bill-wave fa-fw text-green-600"></i>
+                <strong>تأثير على الراتب:</strong> نعم
+                <span v-if="log.details.deduction_type === 'fixed'" class="font-bold text-green-800">(خصم {{ log.details.deduction_amount }} دينار)</span>
+                <span v-else class="font-bold text-green-800">(خصم {{ log.details.deduction_amount }}%)</span>
+            </p>
+        </div>
+        <p class="text-xs text-gray-500 mt-2 text-left">{{ new Date(log.date).toLocaleString('ar-LY') }}</p>
+    </div>
+</li>
+                               </li>
+                            </ul>
+                            <p v-else class="text-sm text-gray-500 text-center py-4">لا يوجد نشاطات مسجلة.</p>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -798,19 +865,18 @@ const toggleAssignmentInModal = (subjectId, sectionId) => {
                         <div class="space-y-4">
                             <div v-for="criterion in criteria" :key="criterion.id" class="p-4 bg-gray-50 rounded-lg">
                                 <label class="block font-medium text-gray-800">{{ criterion.name }}</label>
-                                
                                 <div v-if="getDeductionForCriterion(criterion.id)" class="my-2 p-2 bg-red-100 text-red-700 text-xs rounded-md">
                                     <p class="font-bold">خصم تلقائي: -{{ getDeductionForCriterion(criterion.id).total_deduction }} درجة</p>
                                     <p>السبب: {{ getDeductionForCriterion(criterion.id).reasons }}</p>
                                 </div>
-
                                 <div class="flex items-center space-x-4 rtl:space-x-reverse">
                                     <input type="range" 
                                            v-model="evaluationForm.results.find(r => r.criterion_id === criterion.id).score" 
-                                           :max="criterion.max_score - (getDeductionForCriterion(criterion.id)?.total_deduction || 0)" 
+                                           :max="criterion.max_score"
+                                           min="0"
                                            class="w-full">
                                     <span class="font-bold text-indigo-600 w-24 text-center">
-                                        {{ evaluationForm.results.find(r => r.criterion_id === criterion.id).score }} / {{ criterion.max_score - (getDeductionForCriterion(criterion.id)?.total_deduction || 0) }}
+                                        {{ evaluationForm.results.find(r => r.criterion_id === criterion.id).score }} / {{ criterion.max_score }}
                                     </span>
                                 </div>
                             </div>

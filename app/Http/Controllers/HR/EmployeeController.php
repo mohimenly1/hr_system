@@ -24,6 +24,9 @@ use App\Models\LeaveType;
 use App\Services\LeaveBalanceService;
 use Illuminate\Validation\ValidationException;
 use App\Models\EvaluationCriterion;
+use App\Models\ActivityLog;
+use App\Models\DeductionLog;
+use App\Models\PenaltyType;
 
 
 class EmployeeController extends Controller
@@ -84,31 +87,109 @@ class EmployeeController extends Controller
      {
          $this->authorize('view', $employee);
          
+         // --- 1. تحديث تحميل العلاقات لتشمل العقوبات ---
          $employee->load([
              'user.roles', 
              'department', 
              'contracts', 
              'attachments', 
-             'leaves.leaveType', // <-- تحديث لتحميل نوع الإجازة الجديد
+             'leaves.leaveType',
              'workExperiences',
              'managedDepartments:id,name,manager_id',
-             'evaluations.results.criterion' // <-- تحميل سجل التقييمات وتفاصيله
+             'evaluations.results.criterion',
+             'penalties.penaltyType', // <-- إضافة جديدة
+             'penalties.issuer:id,name' // <-- إضافة جديدة
          ]);
   
          $employee->attachments->each(function ($attachment) {
              $attachment->url = Storage::url($attachment->file_path);
          });
+         
          $averageScore = $employee->evaluations->avg('final_score_percentage');
+         $activeCriteria = EvaluationCriterion::where('is_active', true)->get();
+ 
+         // --- 2. إضافة منطق حساب الخصومات الشهرية ---
+         $deductions = $employee->penalties()
+             ->whereYear('issued_at', now()->year)
+             ->whereMonth('issued_at', now()->month)
+             ->with('penaltyType.criteria')
+             ->get()
+             ->flatMap(fn($penalty) => $penalty->penaltyType->criteria->map(fn($criterion) => [
+                 'criterion_id' => $criterion->id,
+                 'points' => $criterion->pivot->deduction_points,
+                 'reason' => $penalty->penaltyType->name,
+             ]))
+             ->groupBy('criterion_id')
+             ->map(function ($group, $criterionId) use ($activeCriteria) {
+                 $criterion = $activeCriteria->firstWhere('id', $criterionId);
+                 if (!$criterion) return null;
+ 
+                 $totalDeduction = $group->sum('points');
+                 $cappedDeduction = min($totalDeduction, $criterion->max_score);
+ 
+                 return [
+                     'total_deduction' => $cappedDeduction,
+                     'reasons' => $group->pluck('reason')->unique()->implode(', '),
+                 ];
+             })->filter();
+ 
+         // --- 3. إضافة منطق جلب ودمج مؤشر الأداء الكامل ---
+         $creationLogs = ActivityLog::where(function ($query) use ($employee) {
+             $query->where(function($q) use ($employee) {
+                 $q->where('subject_type', \App\Models\Penalty::class)
+                   ->whereIn('subject_id', $employee->penalties->pluck('id'));
+             })->orWhere(function($q) use ($employee) {
+                 $q->where('subject_type', \App\Models\PerformanceEvaluation::class)
+                   ->whereIn('subject_id', $employee->evaluations->pluck('id'));
+             });
+         })->with('user:id,name')->latest()->get()->map(function ($log) {
+             return [
+                 'type' => $log->subject_type,
+                 'date' => $log->created_at,
+                 'user' => $log->user,
+                 'details' => $log->details,
+             ];
+         });
+ 
+         $deductionLogs = DeductionLog::whereIn('performance_evaluation_id', $employee->evaluations->pluck('id'))
+             ->with(['logger:id,name', 'penalty.penaltyType', 'evaluation', 'criterion'])
+             ->latest()->get()->map(function ($log) {
+                 return [
+                     'type' => 'deduction_applied',
+                     'date' => $log->created_at,
+                     'user' => $log->logger,
+                     'details' => [
+                         'penalty_name' => $log->penalty->penaltyType->name,
+                         'evaluation_title' => $log->evaluation->title,
+                         'criterion_name' => $log->criterion->name,
+                         'points' => $log->points_deducted,
+                         'affects_salary' => $log->penalty->penaltyType->affects_salary,
+                         'deduction_amount' => $log->penalty->penaltyType->deduction_amount,
+                         'deduction_type' => $log->penalty->penaltyType->deduction_type,
+                     ],
+                 ];
+             });
+ 
+         $activityLogs = $creationLogs->merge($deductionLogs)
+                                     ->sortByDesc('date')
+                                     ->values()
+                                     ->take(10);
   
+         // --- 4. تحديث البيانات المرسلة إلى الواجهة ---
          return Inertia::render('HR/Employees/Show', [
              'employee' => $employee,
              'departments' => Department::all(['id', 'name']),
              'leaveTypes' => LeaveType::where('is_active', true)->get(['id', 'name']),
              'leaveBalances' => $leaveBalanceService->getAllBalancesForPerson($employee),
-             'criteria' => EvaluationCriterion::where('is_active', true)->get(), // <-- جلب معايير التقييم
-             'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0, // <-- إرسال متوسط التقييم
+             'criteria' => $activeCriteria,
+             'averageEvaluationScore' => $averageScore ? round($averageScore, 2) : 0,
+             // -- الإضافات الجديدة --
+             'penaltyTypes' => PenaltyType::where('is_active', true)->get(['id', 'name']),
+             'deductions' => $deductions,
+             'activityLogs' => $activityLogs,
          ]);
      }
+ 
     public function create()
     {
         $this->authorize('create', Employee::class);
