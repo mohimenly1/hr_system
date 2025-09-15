@@ -1,6 +1,6 @@
 <script setup>
 import HrLayout from '../layouts/HrLayout.vue';
-import { Head, usePage, router } from '@inertiajs/vue3';
+import { Head, usePage, router ,Link} from '@inertiajs/vue3';
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import Chart from 'chart.js/auto';
 
@@ -152,7 +152,9 @@ onUnmounted(() => {
         </div>
 
         <div v-if="stats.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div v-for="stat in stats" :key="stat.name" class="bg-white overflow-hidden shadow-lg rounded-xl p-6 flex items-center space-x-4 rtl:space-x-reverse">
+            
+            <Link v-for="stat in stats" :key="stat.name" :href="stat.route || '#'" 
+                  class="bg-white overflow-hidden shadow-lg rounded-xl p-6 flex items-center space-x-4 rtl:space-x-reverse hover:bg-gray-50 transition-colors duration-200">
                 <div class="bg-indigo-100 p-4 rounded-full">
                      <i :class="stat.icon" class="text-3xl text-indigo-600"></i>
                 </div>
@@ -160,7 +162,7 @@ onUnmounted(() => {
                     <p class="text-3xl font-bold text-gray-900">{{ stat.value }}</p>
                     <h3 class="text-md font-medium text-gray-500">{{ stat.name }}</h3>
                 </div>
-            </div>
+            </Link>
         </div>
         <!-- <div v-else class="text-center bg-white p-8 rounded-lg shadow-md mb-8">
             <h3 class="text-xl font-bold text-gray-800">مرحباً بك</h3>

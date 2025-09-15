@@ -3,13 +3,13 @@ import HrLayout from '@/layouts/HrLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
-    documents: Object,
+    documents: Object, // Paginator object from Laravel
     filters: Object,
 });
 
 const page = usePage();
 
-// --- دوال التحقق من الصلاحيات ---
+// --- Helper functions for permissions and status display ---
 const hasPermission = (permission) => {
     if (!page.props.auth || !page.props.auth.user || !page.props.auth.user.permissions) {
         return false; 
@@ -17,7 +17,6 @@ const hasPermission = (permission) => {
     return page.props.auth.user.permissions.includes(permission);
 };
 
-// --- دالة لترجمة وعرض حالة الوثيقة بشكل أفضل ---
 const getStatusDetails = (status) => {
     const statuses = {
         draft: { text: 'مسودة', class: 'bg-gray-200 text-gray-800', icon: 'fas fa-pencil-alt' },
@@ -140,6 +139,20 @@ const getStatusDetails = (status) => {
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- ### NEW: Pagination Component ### -->
+            <div v-if="documents.links.length > 3" class="mt-6 flex justify-center">
+                <div class="flex flex-wrap -mb-1">
+                    <template v-for="(link, key) in documents.links" :key="key">
+                        <div v-if="link.url === null" class="mr-1 mb-1 px-4 py-3 text-sm leading-4 text-gray-400 border rounded" v-html="link.label" />
+                        <Link v-else 
+                              class="mr-1 mb-1 px-4 py-3 text-sm leading-4 border rounded hover:bg-white focus:border-indigo-500 focus:text-indigo-500" 
+                              :class="{ 'bg-indigo-500 text-white': link.active }" 
+                              :href="link.url" 
+                              v-html="link.label" />
+                    </template>
+                </div>
             </div>
         </div>
     </HrLayout>

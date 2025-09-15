@@ -2,19 +2,15 @@
 
 namespace App\Policies;
 
+use App\Models\Department;
 use App\Models\Document;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
-use Illuminate\Support\Facades\Log; // <-- الخطوة 1: تأكد من إضافة هذا السطر
+use Illuminate\Support\Facades\Log;
 
 class DocumentPolicy
 {
     /**
      * Perform pre-authorization checks.
-     *
-     * @param  \App\Models\User  $user
-     * @param  string  $ability
-     * @return bool|null
      */
     public function before(User $user, string $ability): bool|null
     {
@@ -38,13 +34,20 @@ class DocumentPolicy
      */
     public function view(User $user, Document $document): bool
     {
+        // 1. السماح للمنشئ برؤية وثيقته دائماً
         if ($document->created_by_user_id === $user->id) {
             return true;
         }
 
-        $workflowPathUserIds = collect($document->workflow_path)->pluck('user_id')->all();
-        
-        return in_array($user->id, $workflowPathUserIds);
+        // --- التعديل هنا: التحقق بناءً على الأقسام ---
+        // 2. جلب ID الأقسام التي يديرها المستخدم
+        $managedDeptIds = Department::where('manager_id', $user->id)->pluck('id');
+
+        // 3. جلب ID الأقسام الموجودة في مسار العمل
+        $workflowDeptIds = collect($document->workflow_path)->pluck('department_id');
+
+        // 4. هل يدير المستخدم أياً من الأقسام في مسار العمل؟
+        return $managedDeptIds->intersect($workflowDeptIds)->isNotEmpty();
     }
 
     /**
@@ -72,34 +75,26 @@ class DocumentPolicy
     }
 
     /**
-     * ### تم تعديل اسم الدالة هنا ###
      * Determine whether the user can process a workflow action on the model.
      */
     public function process(User $user, Document $document): bool
     {
-        Log::debug("--- DocumentPolicy@process Check ---");
-        Log::debug("User ID trying to act: " . $user->id . " (" . $user->name . ")");
-        Log::debug("Document ID being processed: " . $document->id . " (Subject: " . $document->subject . ")");
-
         // البحث عن الخطوة الحالية النشطة (التي لم تكتمل بعد) في مسار العمل
         $currentStep = $document->workflowSteps()->whereNull('completed_at')->first();
 
         if (!$currentStep) {
-            Log::debug("Result: No active workflow step found. Denying action.");
-            Log::debug("------------------------------------------");
             return false;
         }
-
-        Log::debug("Active step found. Step ID: " . $currentStep->id);
-        Log::debug("Required User ID for this step (to_user_id): " . $currentStep->to_user_id);
-
-        // فقط المستخدم المكلف بالخطوة الحالية هو من يمكنه اتخاذ الإجراء
-        $isAuthorized = $currentStep->to_user_id === $user->id;
-
-        Log::debug("Authorization check result: " . ($isAuthorized ? 'true (Authorized)' : 'false (Unauthorized)'));
-        Log::debug("------------------------------------------");
         
-        return $isAuthorized;
+        // --- التعديل هنا: التحقق بناءً على مدير القسم ---
+        $targetDepartment = $currentStep->toDepartment;
+
+        if (!$targetDepartment) {
+            return false;
+        }
+        
+        // الشرط الجديد: هل المستخدم الحالي هو مدير القسم المستهدف بالإجراء؟
+        return $targetDepartment->manager_id === $user->id;
     }
 }
 

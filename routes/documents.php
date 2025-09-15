@@ -6,9 +6,10 @@ use App\Http\Controllers\Documents\Settings\ExternalPartyController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('documents', DocumentController::class)->except(['destroy']);
     
     Route::prefix('documents')->name('documents.')->group(function () {
-        
+ 
         Route::get('/', [DocumentController::class, 'index'])->name('index')->middleware('permission:view documents');
         Route::get('/create', [DocumentController::class, 'create'])->name('create')->middleware('permission:create outgoing documents|register incoming documents');
         Route::post('/', [DocumentController::class, 'store'])->name('store');

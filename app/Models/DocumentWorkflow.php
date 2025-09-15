@@ -10,9 +10,10 @@ class DocumentWorkflow extends Model
 {
     use HasFactory;
 
+    // --- تم تعديل الحقول القابلة للتعبئة ---
     protected $fillable = [
-        'document_id', 'from_user_id', 'to_user_id', 'action',
-        'notes', 'signature_image_path', 'due_date', 'completed_at',
+        'document_id', 'from_department_id', 'to_department_id', 'action',
+        'notes', 'signature_image_path', 'due_date', 'completed_at', 'processed_by_user_id'
     ];
 
     protected $casts = [
@@ -20,21 +21,25 @@ class DocumentWorkflow extends Model
         'completed_at' => 'datetime',
     ];
 
-    // علاقة: هذه الخطوة تنتمي إلى وثيقة
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);
     }
 
-    // علاقة: هذه الخطوة جاءت من مستخدم
-    public function fromUser(): BelongsTo
+    // --- علاقات جديدة ---
+    public function fromDepartment(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'from_user_id');
+        return $this->belongsTo(Department::class, 'from_department_id');
+    }
+    
+    public function toDepartment(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'to_department_id');
     }
 
-    // علاقة: هذه الخطوة موجهة إلى مستخدم
-    public function toUser(): BelongsTo
+    public function processedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'to_user_id');
+        return $this->belongsTo(User::class, 'processed_by_user_id');
     }
 }
+

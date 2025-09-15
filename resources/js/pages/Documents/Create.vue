@@ -1,7 +1,7 @@
 <script setup>
 import HrLayout from '@/layouts/HrLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted,computed } from 'vue';
 
 // --- إعداد محرر النصوص Tiptap ---
 import { useEditor, EditorContent } from '@tiptap/vue-3';
@@ -12,47 +12,48 @@ import TextAlign from '@tiptap/extension-text-align';
 import { useDropZone } from '@vueuse/core';
 
 const props = defineProps({
+    document: Object, // سيحتوي على بيانات المسودة عند التعديل
     documentType: String,
     generatedSerialNumber: String,
     documentTypes: Array,
     externalParties: Array,
     availableDepartments: Array,
-    users: Array,
+    allDepartmentsForWorkflow: Array,
 });
+const isEditing = computed(() => !!props.document);
 
 const form = useForm({
-    type: props.documentType,
-    serial_number: props.generatedSerialNumber,
-    subject: '',
-    content: '',
-    document_type_id: null,
-    department_id: null,
-    priority: 'normal',
-    confidentiality_level: 'normal',
-    external_party_id: null,
+    // --- ### التعديل هنا: تمت إزالة _method ### ---
+    // سيقوم Inertia بإضافته تلقائياً عند استخدام form.post
+    _method: isEditing.value ? 'put' : null,
+    type: props.document?.type || props.documentType,
+    serial_number: props.document?.serial_number || props.generatedSerialNumber,
+    subject: props.document?.subject || '',
+    content: props.document?.content || '',
+    document_type_id: props.document?.document_type_id || null,
+    department_id: props.document?.department_id || null,
+    priority: props.document?.priority || 'normal',
+    confidentiality_level: props.document?.confidentiality_level || 'normal',
+    external_party_id: props.document?.external_party_id || null,
     attachments: [],
-    workflow_steps: [], // سيحتوي على مصفوفة من الكائنات: [{ user_id: X }, { user_id: Y }]
+    attachments_to_remove: [],
+    workflow_steps: props.document?.workflow_path || [],
+    action: 'submit_review',
 });
 
 onMounted(() => {
-    if (props.availableDepartments && props.availableDepartments.length === 1) {
+    if (!isEditing.value && props.availableDepartments && props.availableDepartments.length === 1) {
         form.department_id = props.availableDepartments[0].id;
     }
 });
 
+
 const editor = useEditor({
     content: form.content,
-    extensions: [
-        StarterKit,
-        TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ],
-    onUpdate: ({ editor }) => {
-        form.content = editor.getHTML();
-    },
+    extensions: [StarterKit, TextAlign.configure({ types: ['heading', 'paragraph'] })],
+    onUpdate: ({ editor }) => { form.content = editor.getHTML(); },
     editorProps: {
-        attributes: {
-            class: 'prose max-w-none p-4 border-gray-300 rounded-b-md min-h-[400px] focus:outline-none',
-        },
+        attributes: { class: 'prose max-w-none p-4 border-gray-300 rounded-b-md min-h-[400px] focus:outline-none' },
     },
 });
 
@@ -62,40 +63,50 @@ const { isOverDropZone } = useDropZone(dropZoneRef, onDrop);
 const removeAttachment = (index) => { form.attachments.splice(index, 1); };
 const handleFileSelect = (event) => { onDrop(event.target.files); };
 
-// --- ### منطق مسار العمل الجديد ### ---
-const selectedUserForWorkflow = ref(null);
+// --- منطق مسار العمل المحدث بناءً على الأقسام ---
+const selectedDepartmentForWorkflow = ref(null);
 const addWorkflowStep = () => {
-    // التأكد من اختيار مستخدم وأنه غير مضاف مسبقاً
-    if (selectedUserForWorkflow.value && !form.workflow_steps.some(step => step.user_id === selectedUserForWorkflow.value)) {
-        form.workflow_steps.push({ user_id: selectedUserForWorkflow.value });
-        selectedUserForWorkflow.value = null; // إعادة تعيين القائمة المنسدلة
+    if (selectedDepartmentForWorkflow.value && !form.workflow_steps.some(step => step.department_id === selectedDepartmentForWorkflow.value)) {
+        form.workflow_steps.push({ department_id: selectedDepartmentForWorkflow.value });
+        selectedDepartmentForWorkflow.value = null;
     }
 };
 const removeWorkflowStep = (index) => {
     form.workflow_steps.splice(index, 1);
 };
-const getUserNameById = (id) => {
-    const user = props.users.find(u => u.id === id);
-    return user ? user.name : 'مستخدم غير معروف';
+const getDepartmentNameById = (id) => {
+    const dept = props.allDepartmentsForWorkflow.find(d => d.id === id);
+    return dept ? dept.name : 'قسم غير معروف';
 };
 
-// --- ### تحديث دالة الإرسال ### ---
-const submitForm = () => {
-    // إرسال البيانات فعلياً إلى الخادم
-    form.post(route('documents.store'));
+const submit = (actionType) => {
+    form.action = actionType;
+    
+    if (isEditing.value) {
+        // نستخدم form.post لإجبار Inertia على استخدام multipart/form-data للملفات
+        // مع إضافة حقل _method: 'put' ليقوم Laravel بمعاملته كتحديث
+        form.post(route('documents.update', props.document.id), {
+            onError: (errors) => console.error("Update errors:", errors),
+        });
+    } else {
+        form.post(route('documents.store'), {
+            onError: (errors) => console.error("Store errors:", errors),
+        });
+    }
 };
+
 
 const formInputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 transition";
 </script>
 
 <template>
-    <Head :title="documentType === 'outgoing' ? 'إنشاء صادر جديد' : 'تسجيل وارد جديد'" />
+   <Head :title="isEditing ? 'تعديل المسودة' : (documentType === 'outgoing' ? 'إنشاء صادر جديد' : 'تسجيل وارد جديد')" />
     <HrLayout>
         <template #header>
-            {{ documentType === 'outgoing' ? 'إنشاء وثيقة صادرة جديدة' : 'تسجيل وثيقة واردة جديدة' }}
+            {{ isEditing ? 'تعديل المسودة' : (documentType === 'outgoing' ? 'إنشاء وثيقة صادرة جديدة' : 'تسجيل وثيقة واردة جديدة') }}
         </template>
 
-        <form @submit.prevent="submitForm">
+        <form @submit.prevent >
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- العمود الأيمن: البيانات الأساسية ومسار العمل -->
                 <div class="lg:col-span-1 flex flex-col gap-6">
@@ -165,7 +176,7 @@ const formInputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm f
                             <div v-for="(step, index) in form.workflow_steps" :key="index" class="flex items-center justify-between bg-gray-100 p-2 rounded-md animate-fade-in">
                                 <div class="flex items-center">
                                     <span class="bg-indigo-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">{{ index + 1 }}</span>
-                                    <span class="ml-3 rtl:mr-3 text-sm font-medium">{{ getUserNameById(step.user_id) }}</span>
+                                    <span class="ml-3 rtl:mr-3 text-sm font-medium">{{ getDepartmentNameById(step.department_id) }}</span>
                                 </div>
                                 <button @click="removeWorkflowStep(index)" type="button" class="text-red-500 hover:text-red-700">&times;</button>
                             </div>
@@ -173,9 +184,9 @@ const formInputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm f
                         <div class="mt-4 pt-4 border-t">
                             <label class="block text-sm font-medium text-gray-700">إضافة خطوة جديدة للمسار</label>
                             <div class="flex items-center space-x-2 rtl:space-x-reverse mt-1">
-                                <select v-model="selectedUserForWorkflow" :class="formInputClass" class="flex-grow">
-                                    <option :value="null">-- اختر مستخدم --</option>
-                                    <option v-for="user in users" :key="user.id" :value="user.id">{{ user.name }}</option>
+                                <select v-model="selectedDepartmentForWorkflow" :class="formInputClass" class="flex-grow">
+                                    <option :value="null">-- اختر قسم --</option>
+                                    <option v-for="dept in allDepartmentsForWorkflow" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
                                 </select>
                                 <button @click="addWorkflowStep" type="button" class="bg-indigo-500 text-white px-3 py-2 rounded-md hover:bg-indigo-600 text-sm">+</button>
                             </div>
@@ -192,29 +203,23 @@ const formInputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm f
                         </div>
                         <div v-if="editor" class="border-b">
                             <div class="p-2 bg-gray-50 border-b flex items-center space-x-1 rtl:space-x-reverse flex-wrap">
-                                <!-- Basic Formatting -->
                                 <button type="button" @click="editor.chain().focus().toggleBold().run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('bold') }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="عريض"><i class="fas fa-bold"></i></button>
                                 <button type="button" @click="editor.chain().focus().toggleItalic().run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('italic') }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="مائل"><i class="fas fa-italic"></i></button>
                                 <button type="button" @click="editor.chain().focus().toggleStrike().run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('strike') }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="يتوسطه خط"><i class="fas fa-strikethrough"></i></button>
                                 <div class="h-5 w-px bg-gray-300 mx-1"></div>
-                                <!-- Headings -->
                                 <button type="button" @click="editor.chain().focus().toggleHeading({ level: 2 }).run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('heading', { level: 2 }) }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="عنوان 2">H2</button>
                                 <button type="button" @click="editor.chain().focus().toggleHeading({ level: 3 }).run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('heading', { level: 3 }) }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="عنوان 3">H3</button>
                                 <div class="h-5 w-px bg-gray-300 mx-1"></div>
-                                <!-- Lists -->
                                 <button type="button" @click="editor.chain().focus().toggleBulletList().run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('bulletList') }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="قائمة نقطية"><i class="fas fa-list-ul"></i></button>
                                 <button type="button" @click="editor.chain().focus().toggleOrderedList().run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('orderedList') }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="قائمة رقمية"><i class="fas fa-list-ol"></i></button>
                                 <div class="h-5 w-px bg-gray-300 mx-1"></div>
-                                <!-- Alignment -->
                                 <button type="button" @click="editor.chain().focus().setTextAlign('right').run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive({ textAlign: 'right' }) }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="محاذاة لليمين"><i class="fas fa-align-right"></i></button>
                                 <button type="button" @click="editor.chain().focus().setTextAlign('center').run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive({ textAlign: 'center' }) }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="توسيط"><i class="fas fa-align-center"></i></button>
                                 <button type="button" @click="editor.chain().focus().setTextAlign('left').run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive({ textAlign: 'left' }) }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="محاذاة لليسار"><i class="fas fa-align-left"></i></button>
                                 <div class="h-5 w-px bg-gray-300 mx-1"></div>
-                                <!-- Blockquote & Rule -->
                                 <button type="button" @click="editor.chain().focus().toggleBlockquote().run()" :class="{ 'bg-indigo-100 text-indigo-600': editor.isActive('blockquote') }" class="p-2 rounded hover:bg-gray-200 transition-colors" title="اقتباس"><i class="fas fa-quote-right"></i></button>
                                 <button type="button" @click="editor.chain().focus().setHorizontalRule().run()" class="p-2 rounded hover:bg-gray-200 transition-colors" title="خط أفقي"><i class="fas fa-minus"></i></button>
                                 <div class="h-5 w-px bg-gray-300 mx-1"></div>
-                                <!-- History -->
                                 <button type="button" @click="editor.chain().focus().undo().run()" class="p-2 rounded hover:bg-gray-200 transition-colors" title="تراجع"><i class="fas fa-undo"></i></button>
                                 <button type="button" @click="editor.chain().focus().redo().run()" class="p-2 rounded hover:bg-gray-200 transition-colors" title="إعادة"><i class="fas fa-redo"></i></button>
                             </div>
@@ -226,11 +231,12 @@ const formInputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm f
                         <h3 class="font-bold text-lg mb-4 border-b pb-3 text-gray-800">المرفقات</h3>
                         <div ref="dropZoneRef" @click="$refs.fileInput.click()" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer transition-colors" :class="{ 'bg-indigo-50 border-indigo-400': isOverDropZone }">
                             <i class="fas fa-cloud-upload-alt text-4xl text-gray-400"></i>
-                            <p class="mt-2 text-gray-600">اسحب وأفلت الملفات هنا، أو اضغط للاختيار</p>
+                            <p class="mt-2 text-gray-600">اسحب وأفلت الملفات الجديدة هنا، أو اضغط للاختيار</p>
                             <input ref="fileInput" type="file" @change="handleFileSelect" multiple class="hidden">
                         </div>
                         <ul v-if="form.attachments.length > 0" class="mt-4 space-y-2">
-                            <li v-for="(file, index) in form.attachments" :key="index" class="flex items-center justify-between bg-gray-100 p-2 rounded-md">
+                            <p class="text-sm font-medium text-gray-600 mb-2">مرفقات جديدة سيتم إضافتها:</p>
+                            <li v-for="(file, index) in form.attachments" :key="index" class="flex items-center justify-between bg-green-50 p-2 rounded-md">
                                 <span class="text-sm truncate">{{ file.name }}</span>
                                 <button @click="removeAttachment(index)" type="button" class="text-red-500 hover:text-red-700 mr-2 rtl:ml-2">&times;</button>
                             </li>
@@ -239,9 +245,12 @@ const formInputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm f
                 </div>
             </div>
 
-            <div class="mt-8 flex justify-end bg-white p-4 shadow-md rounded-lg">
-                <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 transition-colors" :disabled="form.processing">
-                    حفظ وبدء مسار العمل
+            <div class="mt-8 flex justify-end items-center gap-4 bg-white p-4 shadow-md rounded-lg">
+                <button @click="submit('save_draft')" type="button" class="bg-gray-600 text-white px-6 py-2 rounded-md hover:bg-gray-700 transition-colors" :disabled="form.processing">
+                    {{ isEditing ? 'حفظ التعديلات' : 'حفظ كمسودة' }}
+                </button>
+                <button @click="submit('submit_review')" type="button" class="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 transition-colors" :disabled="form.processing">
+                    بدء مسار العمل
                 </button>
             </div>
         </form>

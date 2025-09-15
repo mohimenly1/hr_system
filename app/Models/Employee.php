@@ -27,13 +27,13 @@ class Employee extends Model
         'gender',
         'employment_status',
               // --- NEW FILLABLE FIELDS ---
-              'middle_name',
-              'last_name',
-              'mother_name',
-              'marital_status',
-              'nationality',
-              'national_id_number',
-              'fingerprint_id', // --- ADDED ---
+        'middle_name',
+        'last_name',
+        'mother_name',
+        'marital_status',
+        'nationality',
+        'national_id_number',
+        'fingerprint_id', // --- ADDED ---
     ];
 
     /**
