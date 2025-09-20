@@ -52,6 +52,8 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
             Route::get('fingerprint/device-users', [FingerprintDeviceController::class, 'getDeviceUsers'])->name('fingerprint.device.users');
             Route::delete('fingerprint/clear-users', [FingerprintDeviceController::class, 'clearDeviceUsers'])->name('fingerprint.clear.users');
             Route::post('fingerprint/sync-monthly', [FingerprintDeviceController::class, 'syncMonthly'])->name('fingerprint.sync.monthly');
+            Route::post('fingerprint/backup-data', [FingerprintDeviceController::class, 'backupDeviceData'])->name('fingerprint.backup.data');
+            Route::get('fingerprint/link-users', [FingerprintDeviceController::class, 'showAndLinkDeviceUsers'])->name('fingerprint.link.users');
             
             // Shifts Management
             Route::resource('shifts', ShiftController::class);

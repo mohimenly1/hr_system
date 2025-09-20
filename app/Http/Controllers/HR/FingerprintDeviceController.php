@@ -15,7 +15,9 @@ use CodingLibs\ZktecoPhp\Libs\ZKTeco;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use App\Models\Attendance;
+use App\Models\FingerprintBackup;
 use App\Services\FingerprintService;
+
 
 
 class FingerprintDeviceController extends Controller
@@ -23,6 +25,66 @@ class FingerprintDeviceController extends Controller
     /**
      * Helper function to connect to the ZKTeco device using the new library.
      */
+
+
+     public function showAndLinkDeviceUsers()
+     {
+         $zk = null;
+         try {
+             $zk = $this->getZkInstance();
+             $deviceUsersRaw = $zk->getUsers();
+             $zk->disconnect();
+ 
+             if (!is_array($deviceUsersRaw) || empty($deviceUsersRaw)) {
+                 return Inertia::render('HR/Fingerprint/Index', ['linkedUsers' => []])
+                     ->with('info', 'لا يوجد مستخدمين على الجهاز لعرضهم.');
+             }
+ 
+             // 1. جلب كل الموظفين والمعلمين الذين لديهم رقم بصمة مرة واحدة لتحسين الأداء
+             $employees = Employee::whereNotNull('fingerprint_id')->with('user')->get()->keyBy('fingerprint_id');
+             $teachers = Teacher::whereNotNull('fingerprint_id')->with('user')->get()->keyBy('fingerprint_id');
+ 
+             // 2. معالجة بيانات المستخدمين من الجهاز لإضافة حالة الربط
+             $linkedUsers = collect($deviceUsersRaw)->map(function ($deviceUser) use ($employees, $teachers) {
+                 
+                 $fingerprintId = $deviceUser['user_id'];
+                 $linkedPerson = null;
+                 $linkedType = null;
+ 
+                 // 3. البحث عن تطابق في الموظفين أولاً، ثم المعلمين
+                 if ($employees->has($fingerprintId)) {
+                     $linkedPerson = $employees->get($fingerprintId);
+                     $linkedType = 'موظف';
+                 } elseif ($teachers->has($fingerprintId)) {
+                     $linkedPerson = $teachers->get($fingerprintId);
+                     $linkedType = 'معلم';
+                 }
+ 
+                 // 4. بناء كائن جديد يحتوي على كل المعلومات
+                 return [
+                     'uid' => $deviceUser['uid'],
+                     'device_user_id' => $fingerprintId,
+                     'device_name' => $deviceUser['name'],
+                     'status' => $linkedPerson ? 'مرتبط' : 'غير مرتبط',
+                     'linked_person' => $linkedPerson ? [
+                         'id' => $linkedPerson->id,
+                         'name' => $linkedPerson->user->name, // الاسم من جدول Users
+                         'type' => $linkedType,
+                         'job_title' => $linkedPerson->job_title ?? $linkedPerson->specialization, // مثال
+                     ] : null,
+                 ];
+             });
+ 
+             return Inertia::render('HR/Fingerprint/Index', [
+                 'linkedUsers' => $linkedUsers
+             ]);
+ 
+         } catch (\Exception $e) {
+             if ($zk) { $zk->disconnect(); }
+             Log::error('Fingerprint Link Users Error: ' . $e->getMessage());
+             return Redirect::back()->with('error', 'خطأ في جلب وربط المستخدمين: ' + $e->getMessage());
+         }
+     }
     private function getZkInstance()
     {
         $ip = config('app.fingerprint_device_ip');
@@ -315,5 +377,67 @@ class FingerprintDeviceController extends Controller
             return Redirect::back()->with('error', 'حدث خطأ أثناء المزامنة: ' . $e->getMessage());
         }
     }
+
+
+// في FingerprintDeviceController.php
+
+public function backupDeviceData()
+{
+    $zk = null;
+    try {
+        $zk = $this->getZkInstance();
+        
+        $users = $zk->getUsers();
+        
+        if (empty($users)) {
+            $zk->disconnect();
+            return Redirect::back()->with('info', 'لا يوجد مستخدمين على الجهاز لعمل نسخة احتياطية.');
+        }
+
+        $backedUpCount = 0;
+        foreach ($users as $user) {
+            if (!isset($user['uid'])) {
+                continue;
+            }
+
+            // 1. جلب قوالب البصمات الثنائية (الخام)
+            $fingerprintTemplatesBinary = $zk->getFingerprint($user['uid']); 
+            
+            $templatesToStore = null;
+
+            // 2. التحقق من وجود بصمات وتحويلها إلى Base64
+            if (is_array($fingerprintTemplatesBinary) && !empty($fingerprintTemplatesBinary)) {
+                $encodedTemplates = [];
+                // المرور على كل بصمة وتحويلها
+                foreach ($fingerprintTemplatesBinary as $fingerId => $binaryData) {
+                    $encodedTemplates[$fingerId] = base64_encode($binaryData);
+                }
+                // تحويل مصفوفة النصوص المشفرة إلى JSON للحفظ
+                $templatesToStore = json_encode($encodedTemplates);
+            }
+            
+            // 3. الحفظ في قاعدة البيانات
+            FingerprintBackup::updateOrCreate(
+                ['device_uid' => $user['uid']],
+                [
+                    'user_id' => $user['user_id'],
+                    'name' => $user['name'],
+                    'role' => $user['role'],
+                    'fingerprints_template_data' => $templatesToStore,
+                ]
+            );
+            $backedUpCount++;
+        }
+
+        $zk->disconnect();
+        return Redirect::back()->with('success', "تم أخذ نسخة احتياطية لـ {$backedUpCount} مستخدم مع بصماتهم بنجاح.");
+
+    } catch (\Exception $e) {
+        if ($zk) { $zk->disconnect(); }
+        Log::error('Fingerprint Backup Error on line ' . $e->getLine() . ': ' . $e->getMessage());
+        return Redirect::back()->with('error', 'فشل أخذ النسخة الاحتياطية: ' . $e->getMessage());
+    }
+}
+
 }
 

@@ -7,6 +7,10 @@ const props = defineProps({
     deviceUsers: {
         type: Array,
         default: () => [],
+    },
+    linkedUsers: {
+        type: Array,
+        default: () => [],
     }
 });
 
@@ -22,11 +26,18 @@ const monthlyForm = useForm({
 });
 
 const submitSyncAttendance = () => {
-    attendanceForm.post(route('hr.fingerprint.sync.attendance'));
+    attendanceForm.post(route('hr.integrations.fingerprint.sync.attendance'));
 };
 
 const submitSyncMonthly = () => {
-    monthlyForm.post(route('hr.fingerprint.sync.monthly'));
+    monthlyForm.post(route('hr.integrations.fingerprint.sync.monthly'));
+};
+
+const confirmBackup = () => {
+    if (confirm('سيقوم هذا الإجراء بسحب نسخة كاملة من بيانات المستخدمين وبصماتهم وحفظها في النظام كنسخة احتياطية.\n\nلن يتم تعديل أي بيانات على جهاز البصمة. هل تريد المتابعة؟')) {
+        // تأكد من أن اسم الروت يطابق ما في ملف routes/web.php
+        router.post(route('hr.integrations.fingerprint.backup.data'));
+    }
 };
 
 const confirmClearUsers = () => {
@@ -62,6 +73,26 @@ const confirmClearUsers = () => {
                          <Link :href="route('hr.integrations.fingerprint.test')" method="get" as="button" class="w-full bg-gray-600 text-white py-2 rounded-md hover:bg-gray-700 font-semibold">
                             بدء اختبار الاتصال
                         </Link>
+                    </div>
+                </div>
+
+                <div class="bg-white shadow-md rounded-lg p-6 border-l-4 border-green-500">
+                    <div class="flex items-center space-x-4 rtl:space-x-reverse">
+                        <div class="bg-green-100 p-3 rounded-full">
+                            <i class="fas fa-shield-alt text-2xl text-green-500"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800">2. إنشاء نسخة احتياطية آمنة</h3>
+                            <p class="text-gray-500 text-sm mt-1">
+                                سحب نسخة كاملة من بيانات المستخدمين وبصماتهم وحفظها في النظام.
+                                <span class="font-bold text-green-700">هذا الإجراء آمن ولا يعدّل أي بيانات على الجهاز.</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                         <button @click="confirmBackup" class="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 font-semibold">
+                            إنشاء نسخة احتياطية الآن
+                        </button>
                     </div>
                 </div>
 
@@ -154,34 +185,54 @@ const confirmClearUsers = () => {
 
             <!-- Right Column: Device Users List -->
             <div class="bg-white shadow-md rounded-lg">
-                <div class="p-6 border-b flex justify-between items-center">
-                    <h3 class="text-xl font-bold text-gray-800">المستخدمون المسجلون في الجهاز</h3>
-                     <Link :href="route('hr.integrations.fingerprint.device.users')" method="get" as="button" class="text-sm bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 font-semibold">
-                        تحديث القائمة
-                    </Link>
-                </div>
-                <div class="max-h-[50rem] overflow-y-auto">
-                    <div v-if="!deviceUsers || deviceUsers.length === 0" class="text-center p-8 text-gray-500">
-                        <p>لم يتم عرض أي مستخدمين. اضغط على "تحديث القائمة".</p>
-                    </div>
-                    <table v-else class="min-w-full">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="text-right py-2 px-4 font-semibold text-sm">ID</th>
-                                <th class="text-right py-2 px-4 font-semibold text-sm">الاسم</th>
-                                <th class="text-right py-2 px-4 font-semibold text-sm">الدور</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-gray-700">
-                            <tr v-for="user in deviceUsers" :key="user.uid" class="border-t">
-                                <td class="py-2 px-4 font-mono">{{ user.uid }}</td>
-                                <td class="py-2 px-4">{{ user.name }}</td>
-                                <td class="py-2 px-4 text-xs">{{ user.role }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="p-6 border-b flex justify-between items-center">
+                <h3 class="text-xl font-bold text-gray-800">مستخدمو الجهاز وحالة الربط</h3>
+                <Link :href="route('hr.integrations.fingerprint.link.users')" method="get" as="button" class="text-sm bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 font-semibold">
+                    جلب وتحديث الحالة
+                </Link>
             </div>
+            <div class="max-h-[50rem] overflow-y-auto">
+                <div v-if="!linkedUsers || linkedUsers.length === 0" class="text-center p-8 text-gray-500">
+                    <p>اضغط على "جلب وتحديث الحالة" لعرض المستخدمين.</p>
+                </div>
+                <table v-else class="min-w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="text-right py-3 px-4 font-semibold text-sm text-gray-600">رقم البصمة</th>
+                            <th class="text-right py-3 px-4 font-semibold text-sm text-gray-600">الاسم في الجهاز</th>
+                            <th class="text-center py-3 px-4 font-semibold text-sm text-gray-600">الحالة</th>
+                            <th class="text-right py-3 px-4 font-semibold text-sm text-gray-600">مرتبط بـ</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-700">
+                        <tr v-for="user in linkedUsers" :key="user.uid" class="border-t hover:bg-gray-50">
+                            <td class="py-3 px-4 font-mono">{{ user.device_user_id }}</td>
+                            <td class="py-3 px-4">{{ user.device_name }}</td>
+                            <td class="py-3 px-4 text-center">
+                                <span 
+                                    :class="{
+                                        'bg-green-100 text-green-800': user.status === 'مرتبط',
+                                        'bg-yellow-100 text-yellow-800': user.status === 'غير مرتبط'
+                                    }"
+                                    class="px-3 py-1 text-xs font-medium rounded-full"
+                                >
+                                    {{ user.status }}
+                                </span>
+                            </td>
+                            <td class="py-3 px-4">
+                                <div v-if="user.linked_person">
+                                    <p class="font-semibold">{{ user.linked_person.name }}</p>
+                                    <p class="text-xs text-gray-500">{{ user.linked_person.type }}</p>
+                                </div>
+                                <div v-else class="text-xs text-gray-400">
+                                    --
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
         </div>
     </HrLayout>
 </template>

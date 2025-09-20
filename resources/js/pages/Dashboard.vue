@@ -176,10 +176,10 @@ onUnmounted(() => {
                 </h3>
                 <ul v-if="topPerformers && topPerformers.length > 0" class="space-y-3">
                     <li v-for="performer in topPerformers" :key="performer.id" class="flex items-center justify-between">
-                        <div class="flex items-center">
+                        <!-- <div class="flex items-center">
                             <span class="font-semibold text-gray-700">{{ performer.evaluable.user.name }}</span>
                             <span v-if="userRole === 'admin'" class="text-xs text-gray-500 mr-2 rtl:ml-2">({{ performer.evaluable.department?.name || 'N/A' }})</span>
-                        </div>
+                        </div> -->
                         <span class="font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full text-sm">{{ performer.final_score_percentage }}%</span>
                     </li>
                 </ul>
@@ -192,10 +192,10 @@ onUnmounted(() => {
                 </h3>
                 <ul v-if="lowestPerformers && lowestPerformers.length > 0" class="space-y-3">
                     <li v-for="evaluation in lowestPerformers" :key="evaluation.id" class="flex items-center justify-between">
-                        <div class="flex items-center">
+                        <!-- <div class="flex items-center">
                            <span class="font-semibold text-gray-700">{{ evaluation.evaluable.user.name }}</span>
                            <span v-if="userRole === 'admin'" class="text-xs text-gray-500 mr-2 rtl:ml-2">({{ evaluation.evaluable.department?.name || 'N/A' }})</span>
-                        </div>
+                        </div> -->
                         <span class="font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full text-sm">{{ evaluation.final_score_percentage }}%</span>
                     </li>
                 </ul>
