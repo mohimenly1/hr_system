@@ -40,7 +40,7 @@ class EmployeeController extends Controller
         $user = Auth::user();
 
         $employeesQuery = Employee::with([
-                'user.roles:id,name', 
+                'user.roles:id,name',
                 'department:id,name',
                 'managedDepartments:id,name,manager_id' // <-- جلب الأقسام التي يديرها
             ])
@@ -54,7 +54,7 @@ class EmployeeController extends Controller
                 $query->where('department_id', $departmentId);
             });
 
-        
+
         $departmentsForFilter = collect();
 
         if ($user->hasRole('department-manager')) {
@@ -64,13 +64,13 @@ class EmployeeController extends Controller
                 // مدير القسم سيرى فقط الأقسام التي يديرها في الفلتر
                 $departmentsForFilter = Department::whereIn('id', $managedDepartmentIds)->get(['id', 'name']);
             } else {
-                $employeesQuery->whereRaw('1 = 0'); 
+                $employeesQuery->whereRaw('1 = 0');
             }
         } else {
             // الأدوار الأخرى سترى كل الأقسام
             $departmentsForFilter = Department::all(['id', 'name']);
         }
-        
+
         $employees = $employeesQuery->latest()->paginate(10)->withQueryString();
 
         return Inertia::render('HR/Employees/Index', [
@@ -86,13 +86,13 @@ class EmployeeController extends Controller
      public function show(Employee $employee, LeaveBalanceService $leaveBalanceService)
      {
          $this->authorize('view', $employee);
-         
+
          // --- 1. تحديث تحميل العلاقات لتشمل العقوبات ---
          $employee->load([
-             'user.roles', 
-             'department', 
-             'contracts', 
-             'attachments', 
+             'user.roles',
+             'department',
+             'contracts',
+             'attachments',
              'leaves.leaveType',
              'workExperiences',
              'managedDepartments:id,name,manager_id',
@@ -100,14 +100,14 @@ class EmployeeController extends Controller
              'penalties.penaltyType', // <-- إضافة جديدة
              'penalties.issuer:id,name' // <-- إضافة جديدة
          ]);
-  
+
          $employee->attachments->each(function ($attachment) {
              $attachment->url = Storage::url($attachment->file_path);
          });
-         
+
          $averageScore = $employee->evaluations->avg('final_score_percentage');
          $activeCriteria = EvaluationCriterion::where('is_active', true)->get();
- 
+
          // --- 2. إضافة منطق حساب الخصومات الشهرية ---
          $deductions = $employee->penalties()
              ->whereYear('issued_at', now()->year)
@@ -123,16 +123,16 @@ class EmployeeController extends Controller
              ->map(function ($group, $criterionId) use ($activeCriteria) {
                  $criterion = $activeCriteria->firstWhere('id', $criterionId);
                  if (!$criterion) return null;
- 
+
                  $totalDeduction = $group->sum('points');
                  $cappedDeduction = min($totalDeduction, $criterion->max_score);
- 
+
                  return [
                      'total_deduction' => $cappedDeduction,
                      'reasons' => $group->pluck('reason')->unique()->implode(', '),
                  ];
              })->filter();
- 
+
          // --- 3. إضافة منطق جلب ودمج مؤشر الأداء الكامل ---
          $creationLogs = ActivityLog::where(function ($query) use ($employee) {
              $query->where(function($q) use ($employee) {
@@ -150,7 +150,7 @@ class EmployeeController extends Controller
                  'details' => $log->details,
              ];
          });
- 
+
          $deductionLogs = DeductionLog::whereIn('performance_evaluation_id', $employee->evaluations->pluck('id'))
              ->with(['logger:id,name', 'penalty.penaltyType', 'evaluation', 'criterion'])
              ->latest()->get()->map(function ($log) {
@@ -169,12 +169,12 @@ class EmployeeController extends Controller
                      ],
                  ];
              });
- 
+
          $activityLogs = $creationLogs->merge($deductionLogs)
                                      ->sortByDesc('date')
                                      ->values()
                                      ->take(10);
-  
+
          // --- 4. تحديث البيانات المرسلة إلى الواجهة ---
          return Inertia::render('HR/Employees/Show', [
              'employee' => $employee,
@@ -189,7 +189,7 @@ class EmployeeController extends Controller
              'activityLogs' => $activityLogs,
          ]);
      }
- 
+
     public function create()
     {
         $this->authorize('create', Employee::class);
@@ -204,98 +204,211 @@ class EmployeeController extends Controller
      */
     public function store(Request $request)
     {
-        $this->authorize('create', Employee::class);
-        // Note: Full validation rules from your example are assumed here for brevity
-        $validatedData = $request->validate([
-            'personal.middle_name' => 'nullable|string|max:255',
-            'personal.last_name' => 'nullable|string|max:255',
-            'personal.mother_name' => 'nullable|string|max:255',
-            'personal.marital_status' => 'nullable|string',
-            'personal.nationality' => 'nullable|string|max:255',
-            'personal.national_id_number' => 'nullable|string|max:255|unique:employees,national_id_number',
-            'personal.phone_number' => 'nullable|string|max:20',
-            'personal.address' => 'nullable|string',
-            'personal.date_of_birth' => 'nullable|date',
-            'personal.gender' => 'nullable|in:male,female',
-            'personal.attachments.*' => 'nullable|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
-            'work_experiences' => 'nullable|array',
-            'work_experiences.*.company_name' => 'required_with:work_experiences|string|max:255',
-            'work_experiences.*.job_title' => 'required_with:work_experiences|string|max:255',
-            'work_experiences.*.start_date' => 'nullable|date',
-            'work_experiences.*.end_date' => 'nullable|date|after_or_equal:work_experiences.*.start_date',
-            'work_experiences.*.description' => 'nullable|string',
-            'employment.department_id' => 'required|exists:departments,id',
-            'employment.employee_id' => 'required|string|max:255|unique:employees,employee_id',
-            'employment.fingerprint_id' => 'nullable|numeric|unique:employees,fingerprint_id',
-            'employment.hire_date' => 'required|date',
-            'employment.employment_status' => 'required|in:active,on_leave,terminated',
-            'employment.job_title' => 'required|string|max:255',
-            'employment.contract_type' => 'required|string',
-            'employment.start_date' => 'required|date',
-            'employment.basic_salary' => 'required|numeric|min:0',
-            'employment.housing_allowance' => 'nullable|numeric|min:0',
-            'employment.transportation_allowance' => 'nullable|numeric|min:0',
-            'employment.other_allowances' => 'nullable|numeric|min:0',
-            'employment.status' => 'required|string',
-            'employment.notice_period_days' => 'nullable|integer|min:0',
-            'employment.annual_leave_days' => 'nullable|integer|min:0',
-            'employment.notes' => 'nullable|string',
-            'account.name' => 'required|string|max:255',
-            'account.email' => 'required|string|email|max:255|unique:users,email',
-            'account.password' => ['required', 'confirmed', Rules\Password::defaults()],
-        ]);
+        Log::info('=== Employee Store Method Started ===');
+        Log::info('Request Data:', $request->all());
+
+        try {
+            $this->authorize('create', Employee::class);
+            Log::info('Authorization passed');
+        } catch (\Exception $e) {
+            Log::error('Authorization failed: ' . $e->getMessage());
+            throw $e;
+        }
+
+        try {
+            // Note: Full validation rules from your example are assumed here for brevity
+            Log::info('Starting validation...');
+            $validatedData = $request->validate([
+                'personal.middle_name' => 'nullable|string|max:255',
+                'personal.last_name' => 'nullable|string|max:255',
+                'personal.mother_name' => 'nullable|string|max:255',
+                'personal.marital_status' => 'nullable|string',
+                'personal.nationality' => 'nullable|string|max:255',
+                'personal.national_id_number' => 'nullable|string|max:255|unique:employees,national_id_number',
+                'personal.phone_number' => 'nullable|string|max:20',
+                'personal.address' => 'nullable|string',
+                'personal.date_of_birth' => 'nullable|date',
+                'personal.gender' => 'nullable|in:male,female',
+                'personal.attachments.*' => 'nullable|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
+                'work_experiences' => 'nullable|array',
+                'work_experiences.*.company_name' => 'required_with:work_experiences|string|max:255',
+                'work_experiences.*.job_title' => 'required_with:work_experiences|string|max:255',
+                'work_experiences.*.start_date' => 'nullable|date',
+                'work_experiences.*.end_date' => 'nullable|date|after_or_equal:work_experiences.*.start_date',
+                'work_experiences.*.description' => 'nullable|string',
+                'employment.department_id' => 'required|exists:departments,id',
+                'employment.fingerprint_id' => 'nullable|numeric|unique:employees,fingerprint_id',
+                'employment.hire_date' => 'required|date',
+                'employment.employment_status' => 'required|in:active,on_leave,terminated',
+                'employment.job_title' => 'required|string|max:255',
+                'employment.contract_type' => 'required|string',
+                'employment.start_date' => 'required|date',
+                'employment.basic_salary' => 'required|numeric|min:0',
+                'employment.housing_allowance' => 'nullable|numeric|min:0',
+                'employment.transportation_allowance' => 'nullable|numeric|min:0',
+                'employment.other_allowances' => 'nullable|numeric|min:0',
+                'employment.status' => 'required|string',
+                'employment.notice_period_days' => 'nullable|integer|min:0',
+                'employment.annual_leave_days' => 'nullable|integer|min:0',
+                'employment.notes' => 'nullable|string',
+                'account.name' => 'required|string|max:255',
+                'account.email' => 'required|string|email|max:255|unique:users,email',
+                'account.password' => ['required', 'confirmed', Rules\Password::defaults()],
+            ]);
+            Log::info('Validation passed successfully');
+            Log::info('Validated Data Keys:', array_keys($validatedData));
+        } catch (ValidationException $e) {
+            Log::error('Validation failed:', [
+                'errors' => $e->errors(),
+                'message' => $e->getMessage(),
+            ]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('Unexpected error during validation: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            throw $e;
+        }
 
         DB::beginTransaction();
+        Log::info('Database transaction started');
+
         try {
-            $user = User::create([
-                'name' => $validatedData['account']['name'],
-                'email' => $validatedData['account']['email'],
-                'password' => Hash::make($validatedData['account']['password']),
-            ]);
+            Log::info('Creating user...');
+
+            // Try to create user normally first
+            try {
+                $user = User::create([
+                    'name' => $validatedData['account']['name'],
+                    'email' => $validatedData['account']['email'],
+                    'password' => Hash::make($validatedData['account']['password']),
+                ]);
+                Log::info('User created with ID: ' . $user->id);
+            } catch (\Exception $userException) {
+                // If AUTO_INCREMENT issue, try to fix it and retry
+                if (str_contains($userException->getMessage(), "doesn't have a default value") ||
+                    str_contains($userException->getMessage(), "Field 'id'")) {
+                    Log::warning('AUTO_INCREMENT issue detected, attempting to fix...');
+
+                    // Try to fix the AUTO_INCREMENT issue
+                    try {
+                        DB::statement('ALTER TABLE `users` MODIFY `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT');
+                        Log::info('AUTO_INCREMENT fixed, retrying user creation...');
+
+                        // Retry user creation
+                        $user = User::create([
+                            'name' => $validatedData['account']['name'],
+                            'email' => $validatedData['account']['email'],
+                            'password' => Hash::make($validatedData['account']['password']),
+                        ]);
+                        Log::info('User created with ID: ' . $user->id . ' after AUTO_INCREMENT fix');
+                    } catch (\Exception $fixException) {
+                        Log::error('Failed to fix AUTO_INCREMENT: ' . $fixException->getMessage());
+                        throw $userException; // Throw original exception
+                    }
+                } else {
+                    // If it's a different error, throw it
+                    throw $userException;
+                }
+            }
+
+            Log::info('Assigning employee role...');
             $user->assignRole('employee');
+            Log::info('Role assigned successfully');
 
             // --- FIX: Prepare data correctly for each model ---
-            $personalData = $validatedData['personal'];
+            Log::info('Preparing employee data...');
+            $personalData = $validatedData['personal'] ?? [];
             unset($personalData['attachments']); // Exclude files from mass assignment
 
+            // Generate employee_id automatically
+            Log::info('Generating employee_id automatically...');
+            $employeeId = Employee::generateEmployeeId();
+            Log::info('Generated employee_id: ' . $employeeId);
+
+            // Add fingerprint_id if provided
             $employeeData = array_merge(
                 $personalData,
                 [
+                    'user_id' => $user->id,
                     'department_id' => $validatedData['employment']['department_id'],
-                    'employee_id' => $validatedData['employment']['employee_id'],
+                    'employee_id' => $employeeId, // Auto-generated
                     'job_title' => $validatedData['employment']['job_title'],
                     'hire_date' => $validatedData['employment']['hire_date'],
                     'employment_status' => $validatedData['employment']['employment_status'],
                 ]
             );
+
+            // Add fingerprint_id if it exists in validated data
+            if (isset($validatedData['employment']['fingerprint_id']) && !empty($validatedData['employment']['fingerprint_id'])) {
+                $employeeData['fingerprint_id'] = $validatedData['employment']['fingerprint_id'];
+            }
+
+            Log::info('Creating employee with data:', $employeeData);
             $employee = $user->employee()->create($employeeData);
+            Log::info('Employee created with ID: ' . $employee->id);
 
             // Prepare data specifically for the contract
+            Log::info('Preparing contract data...');
             $contractData = $validatedData['employment'];
+            Log::info('Creating contract...');
             $employee->contracts()->create($contractData);
+            Log::info('Contract created successfully');
 
             // Create Work Experiences
             if (!empty($validatedData['work_experiences'])) {
+                Log::info('Creating work experiences, count: ' . count($validatedData['work_experiences']));
                 $employee->workExperiences()->createMany($validatedData['work_experiences']);
+                Log::info('Work experiences created successfully');
+            } else {
+                Log::info('No work experiences to create');
             }
 
             // Handle Attachments
             if ($request->hasFile('personal.attachments')) {
-                foreach ($request->file('personal.attachments') as $file) {
-                    $path = $file->store("employees/{$employee->id}/attachments", 'public');
-                    $employee->attachments()->create([
-                        'file_path' => $path,
-                        'file_name' => $file->getClientOriginalName(),
-                        'file_type' => $file->getClientMimeType(),
-                    ]);
+                Log::info('Processing attachments...');
+                $files = $request->file('personal.attachments');
+                Log::info('Number of files: ' . (is_array($files) ? count($files) : 1));
+
+                foreach ($files as $file) {
+                    try {
+                        Log::info('Storing file: ' . $file->getClientOriginalName());
+                        $path = $file->store("employees/{$employee->id}/attachments", 'public');
+                        Log::info('File stored at: ' . $path);
+
+                        $employee->attachments()->create([
+                            'file_path' => $path,
+                            'file_name' => $file->getClientOriginalName(),
+                            'file_type' => $file->getClientMimeType(),
+                        ]);
+                        Log::info('Attachment record created');
+                    } catch (\Exception $fileException) {
+                        Log::error('Error processing file ' . $file->getClientOriginalName() . ': ' . $fileException->getMessage());
+                        throw $fileException;
+                    }
                 }
+                Log::info('All attachments processed successfully');
+            } else {
+                Log::info('No attachments to process');
             }
-            
+
+            Log::info('Committing transaction...');
             DB::commit();
+            Log::info('Transaction committed successfully');
+            Log::info('=== Employee Store Method Completed Successfully ===');
 
         } catch (\Exception $e) {
+            Log::error('=== Employee Creation Failed ===');
+            Log::error('Error Message: ' . $e->getMessage());
+            Log::error('Error File: ' . $e->getFile() . ':' . $e->getLine());
+            Log::error('Stack Trace:', [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             DB::rollBack();
-            Log::error('Employee creation failed: ' . $e->getMessage());
+            Log::error('Transaction rolled back');
+            Log::error('=== End of Error Log ===');
+
             return Redirect::back()->with('error', 'حدث خطأ أثناء حفظ بيانات الموظف. يرجى مراجعة سجل الأخطاء.');
         }
 
@@ -328,7 +441,7 @@ class EmployeeController extends Controller
         $this->authorize('update', $employee);
         $employee->load(['user', 'department', 'contracts' => fn($q) => $q->latest()->limit(1), 'workExperiences']);
         $departments = Department::all(['id', 'name']);
-        
+
         return Inertia::render('HR/Employees/Edit', [
             'employee' => $employee,
             'departments' => $departments,
@@ -353,7 +466,7 @@ class EmployeeController extends Controller
             'personal.address' => 'nullable|string',
             'personal.date_of_birth' => 'nullable|date',
             'personal.gender' => 'nullable|in:male,female',
-            
+
             // Work Experiences
             'work_experiences' => 'nullable|array',
             'work_experiences.*.company_name' => 'required_with:work_experiences|string|max:255',
@@ -361,10 +474,10 @@ class EmployeeController extends Controller
             'work_experiences.*.start_date' => 'nullable|date',
             'work_experiences.*.end_date' => 'nullable|date|after_or_equal:work_experiences.*.start_date',
             'work_experiences.*.description' => 'nullable|string',
-            
+
             // Employment & Contract Info
             'employment.department_id' => 'required|exists:departments,id',
-            'employment.employee_id' => ['required', 'string', 'max:255', Rule::unique('employees', 'employee_id')->ignore($employee->id)],
+            // employee_id is auto-generated and should not be changed during update
             'employment.fingerprint_id' => ['nullable','numeric', Rule::unique('employees')->ignore($employee->id)],
             'employment.hire_date' => 'required|date',
             'employment.employment_status' => 'required|in:active,on_leave,terminated',
@@ -403,12 +516,18 @@ class EmployeeController extends Controller
                 $personalData,
                  [
                     'department_id' => $validatedData['employment']['department_id'],
-                    'employee_id' => $validatedData['employment']['employee_id'],
+                    // employee_id is auto-generated and should not be changed
                     'job_title' => $validatedData['employment']['job_title'],
                     'hire_date' => $validatedData['employment']['hire_date'],
                     'employment_status' => $validatedData['employment']['employment_status'],
                 ]
             );
+
+            // Add fingerprint_id if provided
+            if (isset($validatedData['employment']['fingerprint_id']) && !empty($validatedData['employment']['fingerprint_id'])) {
+                $employeeData['fingerprint_id'] = $validatedData['employment']['fingerprint_id'];
+            }
+
             $employee->update($employeeData);
 
             // 3. Prepare and Update Contract data
@@ -438,7 +557,7 @@ class EmployeeController extends Controller
     public function storeLeave(Request $request, Employee $employee, LeaveBalanceService $leaveBalanceService)
     {
         $this->authorize('update', $employee);
-        
+
         $validated = $request->validate([
             'leave_type_id' => 'required|exists:leave_types,id',
             'start_date' => 'required|date',
@@ -540,7 +659,7 @@ class EmployeeController extends Controller
         DB::beginTransaction();
         try {
             $employee->user->update($validatedData['user']);
-            
+
             // Unset the user data before updating the employee
             unset($validatedData['user']);
             $employee->update($validatedData);
@@ -564,7 +683,7 @@ class EmployeeController extends Controller
                 'numeric',
                 Rule::unique('employees')->ignore($employee->id),
                 // Also check against teachers table to avoid conflicts on the device
-                Rule::unique('teachers', 'fingerprint_id') 
+                Rule::unique('teachers', 'fingerprint_id')
             ],
         ]);
 

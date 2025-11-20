@@ -61,7 +61,7 @@ const validateStep = () => {
     let isValid = true;
     if (currentStep.value === 2) {
         const emp = form.employment;
-        if (!emp.employee_id) { stepErrors.value.employee_id = 'رقم الموظف حقل مطلوب.'; isValid = false; }
+        // employee_id is auto-generated and read-only, no validation needed
         if (!emp.department_id) { stepErrors.value.department_id = 'القسم حقل مطلوب.'; isValid = false; }
         if (!emp.job_title) { stepErrors.value.job_title = 'المسمى الوظيفي حقل مطلوب.'; isValid = false; }
         if (!emp.basic_salary) { stepErrors.value.basic_salary = 'الراتب الأساسي حقل مطلوب.'; isValid = false; }
@@ -142,9 +142,9 @@ const submit = () => { if (validateStep()) { form.put(route('hr.employees.update
                         <h4 class="text-lg font-medium mb-4 text-gray-700">معلومات عامة</h4>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                            <div>
-                                <label class="block mb-2 text-sm font-medium text-gray-900">رقم الموظف*</label>
-                                <input type="text" v-model="form.employment.employee_id" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
-                                <div v-if="stepErrors.employee_id" class="text-sm text-red-600 mt-1">{{ stepErrors.employee_id }}</div>
+                                <label class="block mb-2 text-sm font-medium text-gray-900">رقم الموظف</label>
+                                <input type="text" v-model="form.employment.employee_id" readonly disabled class="bg-gray-100 border border-gray-300 text-gray-600 text-sm rounded-lg block w-full p-2.5 cursor-not-allowed">
+                                <p class="text-xs text-gray-500 mt-1">رقم الموظف يتم إنشاؤه تلقائياً ولا يمكن تعديله</p>
                             </div>
                             <div>
                                 <label class="block mb-2 text-sm font-medium text-gray-900">القسم*</label>

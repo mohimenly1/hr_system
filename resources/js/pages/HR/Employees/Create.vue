@@ -26,7 +26,6 @@ const form = useForm({
     work_experiences: [],
     employment: {
         department_id: '',
-        employee_id: '',
         fingerprint_id: '', // --- FIELD ADDED ---
         hire_date: '',
         employment_status: 'active',
@@ -56,7 +55,7 @@ const isPersonalTabComplete = computed(() => !!form.account.name);
 const isExperienceTabComplete = computed(() => true); // This tab is optional
 const isEmploymentTabComplete = computed(() => {
     const emp = form.employment;
-    return !!emp.department_id && !!emp.employee_id && !!emp.fingerprint_id && !!emp.hire_date && !!emp.job_title && !!emp.start_date && !!emp.basic_salary;
+    return !!emp.department_id && !!emp.hire_date && !!emp.job_title && !!emp.start_date && !!emp.basic_salary;
 });
 const isAccountTabComplete = computed(() => {
     const acc = form.account;
@@ -263,15 +262,19 @@ const submit = () => {
                     <!-- Employment Tab -->
                     <div v-show="activeTab === 'employment'">
                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div>
-                                <label class="block mb-2 text-sm font-medium">رقم id الموظف*</label>
-                                <input type="text" v-model="form.employment.employee_id" class="bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2.5">
-                            </div>
                                <!-- NEW FIELD ADDED HERE -->
                                <div>
                                 <label class="block mb-2 text-sm font-medium">رقم البصمة (UID)</label>
                                 <input type="number" v-model="form.employment.fingerprint_id" class="bg-gray-50 border border-gray-300 text-sm rounded-lg block w-full p-2.5">
                                 <p class="text-xs text-gray-500 mt-1">هذا هو رقم ID الخاص بالموظف في جهاز البصمة.</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <p class="text-sm text-blue-800">
+                                        <i class="fas fa-info-circle mr-2"></i>
+                                        <strong>ملاحظة:</strong> سيتم إنشاء رقم الموظف (Employee ID) تلقائياً عند الحفظ.
+                                    </p>
+                                </div>
                             </div>
                              <div>
                                 <label class="block mb-2 text-sm font-medium">المسمى الوظيفي*</label>
