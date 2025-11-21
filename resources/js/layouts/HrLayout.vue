@@ -6,7 +6,7 @@ const page = usePage();
 
 const hasPermission = (permission) => {
     if (!page.props.auth || !page.props.auth.user || !page.props.auth.user.permissions) {
-        return false; 
+        return false;
     }
     return page.props.auth.user.permissions.includes(permission);
 };
@@ -51,6 +51,10 @@ const hasAnyPermission = (permissions) => {
                             <i class="fas fa-clock fa-fw w-6 text-center"></i>
                             <span class="ml-3">الحضور والانصراف</span>
                         </Link>
+                        <Link v-if="hasPermission('manage attendance')" :href="route('hr.general-attendance-report.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/GeneralAttendanceReport') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-file-alt fa-fw w-6 text-center"></i>
+                            <span class="ml-3">التقارير العامة</span>
+                        </Link>
                          <Link v-if="hasPermission('manage leaves')" :href="route('hr.leaves.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/Leaves') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
                             <i class="fas fa-calendar-alt fa-fw w-6 text-center"></i>
                             <span class="ml-3">الإجازات</span>
@@ -77,8 +81,8 @@ const hasAnyPermission = (permissions) => {
                 <div v-if="hasPermission('view documents')" class="mb-4">
                     <h3 class="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">إدارة المراسلات</h3>
                     <div class="mt-2 space-y-1">
-                        <Link :href="route('documents.index')" 
-                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents') }" 
+                        <Link :href="route('documents.index')"
+                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents') }"
                               class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
                             <i class="fas fa-exchange-alt fa-fw w-6 text-center"></i>
                             <span class="ml-3">سجل المراسلات</span>
@@ -127,14 +131,14 @@ const hasAnyPermission = (permissions) => {
                     <!-- ### إضافة إعدادات المراسلات ### -->
                      <div v-if="hasPermission('manage document settings')">
                         <h4 class="px-2 mt-4 mb-2 text-xs font-semibold text-indigo-300">إعدادات المراسلات</h4>
-                        <Link :href="route('documents.settings.document-types.index')" 
-                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents/Settings/DocumentTypes') }" 
+                        <Link :href="route('documents.settings.document-types.index')"
+                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents/Settings/DocumentTypes') }"
                               class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
                             <i class="fas fa-file-alt fa-fw w-6 text-center"></i>
                             <span class="ml-3">أنواع الوثائق</span>
                         </Link>
-                        <Link :href="route('documents.settings.external-parties.index')" 
-                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents/Settings/ExternalParties') }" 
+                        <Link :href="route('documents.settings.external-parties.index')"
+                              :class="{ 'bg-gray-700': $page.component.startsWith('Documents/Settings/ExternalParties') }"
                               class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
                             <i class="fas fa-sitemap fa-fw w-6 text-center"></i>
                             <span class="ml-3">الجهات الخارجية</span>

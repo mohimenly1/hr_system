@@ -11,7 +11,7 @@ use App\Http\Controllers\School\GradeSubjectController;
 use App\Http\Controllers\School\PerformanceEvaluationController;
 
 Route::middleware(['auth', 'verified'])->prefix('school')->name('school.')->group(function () {
-    
+
     // --- Academic Settings ---
     Route::resource('academic-years', AcademicYearController::class)->except(['show']);
     Route::put('academic-years/{academic_year}/set-active', [AcademicYearController::class, 'setActive'])->name('academic-years.set-active');
@@ -30,7 +30,7 @@ Route::middleware(['auth', 'verified'])->prefix('school')->name('school.')->grou
     // --- NEW ROUTE FOR ASSIGNMENTS ---
     Route::put('teachers/{teacher}/assignments', [TeacherController::class, 'updateAssignments'])->name('teachers.assignments.update');
     Route::post('teachers/{teacher}/leaves', [TeacherController::class, 'storeLeave'])->name('teachers.leaves.store');
-  
+
       // Subjects Management
       // Route::resource('subjects', SubjectController::class)->except(['show', 'create', 'edit']);
       Route::post('grades/assign-subjects', [GradeSubjectController::class, 'store'])->name('grades.assign.subjects');
@@ -45,6 +45,13 @@ Route::get('/teachers/{teacher}/attendance', [TeacherController::class, 'showAtt
 // مسار لتنفيذ مزامنة الحضور لمعلم واحد
 Route::post('/teachers/{teacher}/attendance/sync', [TeacherController::class, 'syncSingleAttendance'])
     ->name('teachers.attendance.sync');
+
+// مسارات تصدير تقارير الحضور
+Route::get('/teachers/{teacher}/attendance/export', [TeacherController::class, 'exportAttendanceReport'])
+    ->name('teachers.attendance.export');
+
+Route::get('/teachers/{teacher}/attendance/export-absent', [TeacherController::class, 'exportAbsentDaysReport'])
+    ->name('teachers.attendance.export-absent');
 
     Route::post('teachers/{teacher}/evaluations', [PerformanceEvaluationController::class, 'store'])->name('evaluations.store');
 });

@@ -12,8 +12,8 @@
 
         <!-- Scripts -->
         {{-- Ziggy's @routes directive generates the necessary JS for the route() helper --}}
-        @routes
-        @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
+       @routes
+        @vite(['resources/js/app.ts'])
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
@@ -25,4 +25,3 @@
             color: #333 !important;
         }
 </html>
-

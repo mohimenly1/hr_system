@@ -18,6 +18,7 @@ use App\Http\Controllers\HR\EvaluationSettingsController;
 use App\Http\Controllers\HR\EmployeePerformanceEvaluationController;
 use App\Http\Controllers\HR\PenaltySettingsController;
 use App\Http\Controllers\HR\PenaltyController;
+use App\Http\Controllers\HR\GeneralAttendanceReportController;
 
 // All routes in this file are protected by the 'auth' and 'verified' middleware
 // and are prefixed with '/hr' and named 'hr.'
@@ -28,7 +29,7 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
     // These routes are for high-level configuration and user management.
     //======================================================================
     Route::middleware(['permission:manage users|manage roles|manage departments|access integrations'])->group(function () {
-        
+
         // --- User & Role Management ---
         Route::resource('users', UserController::class)->only(['index', 'edit', 'update']);
         Route::put('users/{user}/status', [UserController::class, 'updateStatus'])->name('users.update.status');
@@ -54,7 +55,7 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
             Route::post('fingerprint/sync-monthly', [FingerprintDeviceController::class, 'syncMonthly'])->name('fingerprint.sync.monthly');
             Route::post('fingerprint/backup-data', [FingerprintDeviceController::class, 'backupDeviceData'])->name('fingerprint.backup.data');
             Route::get('fingerprint/link-users', [FingerprintDeviceController::class, 'showAndLinkDeviceUsers'])->name('fingerprint.link.users');
-            
+
             // Shifts Management
             Route::resource('shifts', ShiftController::class);
             Route::post('shift-assignments', [ShiftAssignmentController::class, 'store'])->name('shift-assignments.store');
@@ -84,6 +85,8 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
         Route::put('employees/{employee}/fingerprint', [EmployeeController::class, 'updateFingerprintId'])->name('employees.fingerprint.update');
         Route::get('/employees/{employee}/attendance', [EmployeeController::class, 'showAttendance'])->name('employees.attendance.show');
         Route::post('/employees/{employee}/attendance/sync', [EmployeeController::class, 'syncSingleAttendance'])->name('employees.attendance.sync');
+        Route::get('/employees/{employee}/attendance/export', [EmployeeController::class, 'exportAttendanceReport'])->name('employees.attendance.export');
+        Route::get('/employees/{employee}/attendance/export-absent', [EmployeeController::class, 'exportAbsentDaysReport'])->name('employees.attendance.export-absent');
     });
 
 
@@ -100,6 +103,14 @@ Route::middleware(['auth', 'verified'])->prefix('hr')->name('hr.')->group(functi
 
     Route::resource('leaves', LeaveController::class)->middleware('permission:manage leaves');
     Route::resource('attendances', AttendanceController::class)->middleware('permission:manage attendance');
+
+    // General Attendance Reports
+    Route::get('general-attendance-report', [GeneralAttendanceReportController::class, 'index'])
+        ->name('general-attendance-report.index')
+        ->middleware('permission:manage attendance');
+    Route::get('general-attendance-report/export', [GeneralAttendanceReportController::class, 'export'])
+        ->name('general-attendance-report.export')
+        ->middleware('permission:manage attendance');
 
 });
 

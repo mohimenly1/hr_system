@@ -27,6 +27,9 @@ use App\Models\EvaluationCriterion;
 use App\Models\ActivityLog;
 use App\Models\DeductionLog;
 use App\Models\PenaltyType;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\AttendanceExport;
+use App\Exports\AbsentDaysExport;
 
 
 class EmployeeController extends Controller
@@ -692,22 +695,428 @@ class EmployeeController extends Controller
         return Redirect::back()->with('success', 'تم تحديث رقم البصمة بنجاح.');
     }
 
-    public function showAttendance(Employee $employee)
+    public function showAttendance(Request $request, Employee $employee)
     {
         $this->authorize('view', $employee);
         // تحميل بيانات المستخدم المرتبطة بالموظف
-        $employee->load('user');
+        $employee->load('user', 'department');
 
-        // جلب سجلات الحضور الخاصة بالموظف مع ترتيبها من الأحدث للأقدم وتقسيمها لصفحات
-        $attendances = $employee->attendances()
-                                ->orderBy('attendance_date', 'desc')
-                                ->paginate(15);
+        // جلب الأشهر المتاحة في سجلات الحضور
+        // ترتيب من الأحدث للأقدم (آخر شهر موجود في قاعدة البيانات أولاً)
+        $availableMonths = $employee->attendances()
+            ->selectRaw('YEAR(attendance_date) as year, MONTH(attendance_date) as month')
+            ->groupBy('year', 'month')
+            ->orderBy('year', 'desc')
+            ->orderBy('month', 'desc')
+            ->get()
+            ->map(function ($item) {
+                $date = \Carbon\Carbon::create($item->year, $item->month, 1);
+                return [
+                    'value' => $item->year . '-' . str_pad($item->month, 2, '0', STR_PAD_LEFT),
+                    'label' => $date->locale('ar')->translatedFormat('F Y'),
+                    'year' => $item->year,
+                    'month' => $item->month,
+                ];
+            });
+
+        // فلترة حسب نوع الفلترة
+        $filterType = $request->input('filter_type', 'month'); // 'month' or 'date_range'
+        $selectedMonth = $request->input('month');
+        $startDateInput = $request->input('start_date');
+        $endDateInput = $request->input('end_date');
+
+        $startDate = null;
+        $endDate = null;
+        $selectedYear = null;
+        $selectedMonthNum = null;
+
+        if ($filterType === 'date_range' && $startDateInput && $endDateInput) {
+            // فلترة حسب نطاق التاريخ
+            $startDate = \Carbon\Carbon::parse($startDateInput);
+            $endDate = \Carbon\Carbon::parse($endDateInput);
+
+            // جلب سجلات الحضور لنطاق التاريخ
+            $attendancesQuery = $employee->attendances()
+                ->whereBetween('attendance_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->orderBy('attendance_date', 'desc');
+        } else {
+            // فلترة حسب الشهر المحدد
+            if ($selectedMonth) {
+                // إذا تم تحديد شهر من المستخدم، استخدمه
+                [$selectedYear, $selectedMonthNum] = explode('-', $selectedMonth);
+            } else {
+                // إذا لم يتم تحديد شهر، استخدم آخر شهر موجود في قاعدة البيانات
+                if ($availableMonths->isNotEmpty()) {
+                    // $availableMonths مرتبة من الأحدث للأقدم، لذا first() يعطي آخر شهر موجود
+                    $latestMonth = $availableMonths->first();
+                    $selectedYear = $latestMonth['year'];
+                    $selectedMonthNum = $latestMonth['month'];
+                    $selectedMonth = $latestMonth['value'];
+                } else {
+                    // إذا لم توجد أي سجلات حضور، استخدم الشهر الحالي (حالة نادرة)
+                    $selectedYear = now()->year;
+                    $selectedMonthNum = now()->month;
+                    $selectedMonth = now()->format('Y-m');
+                }
+            }
+
+            // جلب سجلات الحضور للشهر المحدد
+            $attendancesQuery = $employee->attendances()
+                ->whereYear('attendance_date', $selectedYear)
+                ->whereMonth('attendance_date', $selectedMonthNum)
+                ->orderBy('attendance_date', 'desc');
+
+            // حساب الإحصائيات للشهر المحدد
+            $startDate = \Carbon\Carbon::create($selectedYear, $selectedMonthNum, 1)->startOfMonth();
+            $endDate = $startDate->copy()->endOfMonth();
+        }
+
+        $attendances = $attendancesQuery->paginate(15)->withQueryString();
+
+        // جلب جميع أيام الشهر (بما فيها أيام الجمعة والسبت)
+        $allDaysInMonth = collect();
+        $currentDate = $startDate->copy();
+        while ($currentDate->lte($endDate)) {
+            $allDaysInMonth->push($currentDate->copy());
+            $currentDate->addDay();
+        }
+
+        // حساب أيام الحضور الفعلية
+        if ($filterType === 'date_range' && $startDateInput && $endDateInput) {
+            $attendanceRecords = $employee->attendances()
+                ->whereBetween('attendance_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->get()
+                ->keyBy(function ($record) {
+                    return $record->attendance_date->format('Y-m-d');
+                });
+        } else {
+            $attendanceRecords = $employee->attendances()
+                ->whereYear('attendance_date', $selectedYear)
+                ->whereMonth('attendance_date', $selectedMonthNum)
+                ->get()
+                ->keyBy(function ($record) {
+                    return $record->attendance_date->format('Y-m-d');
+                });
+        }
+
+        // حساب الإحصائيات
+        $totalDays = $allDaysInMonth->count();
+        $fridays = $allDaysInMonth->filter(fn($date) => $date->dayOfWeek === \Carbon\Carbon::FRIDAY)->count();
+        $saturdays = $allDaysInMonth->filter(fn($date) => $date->dayOfWeek === \Carbon\Carbon::SATURDAY)->count();
+        $weekendDays = $fridays + $saturdays;
+        $workingDays = $totalDays - $weekendDays;
+
+        $presentDays = $attendanceRecords->where('status', 'present')->count();
+        $absentDays = $attendanceRecords->where('status', 'absent')->count();
+        $lateDays = $attendanceRecords->where('status', 'late')->count();
+        $leaveDays = $attendanceRecords->where('status', 'on_leave')->count();
+        $holidayDays = $attendanceRecords->where('status', 'holiday')->count();
+
+        // حساب الغيابات الفعلية (استثناء أيام الجمعة والسبت)
+        $actualAbsentDays = $allDaysInMonth
+            ->filter(function ($date) use ($attendanceRecords) {
+                $dateStr = $date->format('Y-m-d');
+                $isWeekend = in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY]);
+                $hasAttendance = $attendanceRecords->has($dateStr);
+
+                // إذا كان يوم عطلة نهاية الأسبوع، لا نحسبه
+                if ($isWeekend) {
+                    return false;
+                }
+
+                // إذا لم يكن هناك سجل حضور، يعتبر غياب
+                return !$hasAttendance;
+            })
+            ->count();
+
+        // حساب أيام الحضور الفعلية (استثناء أيام الجمعة والسبت)
+        $actualPresentDays = $allDaysInMonth
+            ->filter(function ($date) use ($attendanceRecords) {
+                $dateStr = $date->format('Y-m-d');
+                $isWeekend = in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY]);
+
+                if ($isWeekend) {
+                    return false;
+                }
+
+                $record = $attendanceRecords->get($dateStr);
+                return $record && $record->status === 'present';
+            })
+            ->count();
+
+        $statistics = [
+            'total_days' => $totalDays,
+            'working_days' => $workingDays,
+            'weekend_days' => $weekendDays,
+            'fridays' => $fridays,
+            'saturdays' => $saturdays,
+            'present_days' => $presentDays,
+            'actual_present_days' => $actualPresentDays,
+            'absent_days' => $absentDays,
+            'actual_absent_days' => $actualAbsentDays,
+            'late_days' => $lateDays,
+            'leave_days' => $leaveDays,
+            'holiday_days' => $holidayDays,
+            'attendance_rate' => $workingDays > 0 ? round(($actualPresentDays / $workingDays) * 100, 2) : 0,
+        ];
+
+        // حساب أيام الغياب الفعلية مع التفاصيل
+        $absentDaysList = $allDaysInMonth
+            ->filter(function ($date) use ($attendanceRecords) {
+                $dateStr = $date->format('Y-m-d');
+                $isWeekend = in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY]);
+                $hasAttendance = $attendanceRecords->has($dateStr);
+
+                // استثناء أيام نهاية الأسبوع
+                if ($isWeekend) {
+                    return false;
+                }
+
+                // إذا لم يكن هناك سجل حضور، يعتبر غياب
+                return !$hasAttendance;
+            })
+            ->map(function ($date) {
+                return [
+                    'date' => $date->format('Y-m-d'),
+                    'date_formatted' => $date->locale('ar')->translatedFormat('l، d F Y'),
+                    'day_name' => $date->locale('ar')->translatedFormat('l'),
+                    'day_number' => $date->day,
+                ];
+            })
+            ->values();
 
         // إرسال البيانات إلى واجهة العرض
         return Inertia::render('HR/Employees/Attendance/Show', [
             'employee' => $employee,
             'attendances' => $attendances,
+            'availableMonths' => $availableMonths,
+            'filterType' => $filterType,
+            'selectedMonth' => $selectedMonth,
+            'startDate' => $startDateInput,
+            'endDate' => $endDateInput,
+            'statistics' => $statistics,
+            'absentDaysList' => $absentDaysList,
+            'filters' => $request->only('filter_type', 'month', 'start_date', 'end_date'),
         ]);
+    }
+
+    /**
+     * Export absent days report for an employee
+     */
+    public function exportAbsentDaysReport(Request $request, Employee $employee)
+    {
+        $this->authorize('view', $employee);
+
+        $filterType = $request->input('filter_type', 'month');
+        $selectedMonth = $request->input('month');
+        $startDateInput = $request->input('start_date');
+        $endDateInput = $request->input('end_date');
+
+        if ($filterType === 'date_range') {
+            if (!$startDateInput || !$endDateInput) {
+                return Redirect::back()->with('error', 'يرجى تحديد تاريخ البداية والنهاية');
+            }
+            $startDate = \Carbon\Carbon::parse($startDateInput);
+            $endDate = \Carbon\Carbon::parse($endDateInput);
+        } else {
+            if (!$selectedMonth) {
+                return Redirect::back()->with('error', 'يرجى تحديد الشهر');
+            }
+            [$selectedYear, $selectedMonthNum] = explode('-', $selectedMonth);
+            $startDate = \Carbon\Carbon::create($selectedYear, $selectedMonthNum, 1)->startOfMonth();
+            $endDate = $startDate->copy()->endOfMonth();
+        }
+
+        // حساب أيام الغياب
+        $allDaysInMonth = collect();
+        $currentDate = $startDate->copy();
+        while ($currentDate->lte($endDate)) {
+            $allDaysInMonth->push($currentDate->copy());
+            $currentDate->addDay();
+        }
+
+        if ($filterType === 'date_range') {
+            $attendanceRecords = $employee->attendances()
+                ->whereBetween('attendance_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->get()
+                ->keyBy(function ($record) {
+                    return $record->attendance_date->format('Y-m-d');
+                });
+        } else {
+            $attendanceRecords = $employee->attendances()
+                ->whereYear('attendance_date', $selectedYear)
+                ->whereMonth('attendance_date', $selectedMonthNum)
+                ->get()
+                ->keyBy(function ($record) {
+                    return $record->attendance_date->format('Y-m-d');
+                });
+        }
+
+        $absentDaysList = $allDaysInMonth
+            ->filter(function ($date) use ($attendanceRecords) {
+                $dateStr = $date->format('Y-m-d');
+                $isWeekend = in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY]);
+                if ($isWeekend) return false;
+                return !$attendanceRecords->has($dateStr);
+            })
+            ->map(function ($date) {
+                return [
+                    'date' => $date->format('Y-m-d'),
+                    'date_formatted' => $date->locale('ar')->translatedFormat('l، d F Y'),
+                    'day_name' => $date->locale('ar')->translatedFormat('l'),
+                    'day_number' => $date->day,
+                ];
+            })
+            ->values();
+
+        // حساب الإحصائيات
+        $fridays = $allDaysInMonth->filter(fn($date) => $date->dayOfWeek === \Carbon\Carbon::FRIDAY)->count();
+        $saturdays = $allDaysInMonth->filter(fn($date) => $date->dayOfWeek === \Carbon\Carbon::SATURDAY)->count();
+        $weekendDays = $fridays + $saturdays;
+        $workingDays = $allDaysInMonth->count() - $weekendDays;
+
+        $statistics = [
+            'working_days' => $workingDays,
+            'weekend_days' => $weekendDays,
+            'absent_days_count' => $absentDaysList->count(),
+        ];
+
+        if ($filterType === 'date_range') {
+            $periodName = $startDate->locale('ar')->translatedFormat('d F Y') . ' - ' . $endDate->locale('ar')->translatedFormat('d F Y');
+            $fileName = 'ايام_الغياب_' . ($employee->user->full_name ?? $employee->user->name) . '_' . $startDate->format('Y-m-d') . '_' . $endDate->format('Y-m-d') . '.xlsx';
+        } else {
+            $periodName = \Carbon\Carbon::create($selectedYear, $selectedMonthNum, 1)->locale('ar')->translatedFormat('F Y');
+            $fileName = 'ايام_الغياب_' . ($employee->user->full_name ?? $employee->user->name) . '_' . $periodName . '.xlsx';
+        }
+
+        // تحميل جميع العلاقات المطلوبة بشكل صريح
+        $employee->load(['user', 'department']);
+
+        // الحصول على الاسم الكامل من User model
+        $employeeFullName = $employee->user ? ($employee->user->full_name ?? $employee->user->name) : 'غير محدد';
+
+        return Excel::download(
+            new AbsentDaysExport($absentDaysList, $employee, $periodName, $statistics),
+            $fileName
+        );
+    }
+
+    /**
+     * Export attendance report for an employee
+     */
+    public function exportAttendanceReport(Request $request, Employee $employee)
+    {
+        $this->authorize('view', $employee);
+
+        $filterType = $request->input('filter_type', 'month');
+        $selectedMonth = $request->input('month');
+        $startDateInput = $request->input('start_date');
+        $endDateInput = $request->input('end_date');
+
+        if ($filterType === 'date_range') {
+            if (!$startDateInput || !$endDateInput) {
+                return Redirect::back()->with('error', 'يرجى تحديد تاريخ البداية والنهاية');
+            }
+            $startDate = \Carbon\Carbon::parse($startDateInput);
+            $endDate = \Carbon\Carbon::parse($endDateInput);
+        } else {
+            if (!$selectedMonth) {
+                return Redirect::back()->with('error', 'يرجى تحديد الشهر');
+            }
+            [$selectedYear, $selectedMonthNum] = explode('-', $selectedMonth);
+            $startDate = \Carbon\Carbon::create($selectedYear, $selectedMonthNum, 1)->startOfMonth();
+            $endDate = $startDate->copy()->endOfMonth();
+        }
+
+        $allDaysInMonth = collect();
+        $currentDate = $startDate->copy();
+        while ($currentDate->lte($endDate)) {
+            $allDaysInMonth->push($currentDate->copy());
+            $currentDate->addDay();
+        }
+
+        // جلب جميع سجلات الحضور بدون pagination
+        if ($filterType === 'date_range') {
+            $attendanceRecords = $employee->attendances()
+                ->whereBetween('attendance_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->get()
+                ->keyBy(function ($record) {
+                    return $record->attendance_date->format('Y-m-d');
+                });
+        } else {
+            $attendanceRecords = $employee->attendances()
+                ->whereYear('attendance_date', $selectedYear)
+                ->whereMonth('attendance_date', $selectedMonthNum)
+                ->get()
+                ->keyBy(function ($record) {
+                    return $record->attendance_date->format('Y-m-d');
+                });
+        }
+
+        // إنشاء بيانات لجميع أيام الشهر
+        $allDaysData = $allDaysInMonth->map(function ($date) use ($attendanceRecords) {
+            $dateStr = $date->format('Y-m-d');
+            $record = $attendanceRecords->get($dateStr);
+
+            return [
+                'date' => $dateStr,
+                'check_in' => $record ? $record->check_in_time : null,
+                'check_out' => $record ? $record->check_out_time : null,
+                'status' => $record ? $record->status : null,
+                'notes' => $record ? $record->notes : null,
+            ];
+        })->values();
+
+        // حساب الإحصائيات
+        $fridays = $allDaysInMonth->filter(fn($date) => $date->dayOfWeek === \Carbon\Carbon::FRIDAY)->count();
+        $saturdays = $allDaysInMonth->filter(fn($date) => $date->dayOfWeek === \Carbon\Carbon::SATURDAY)->count();
+        $weekendDays = $fridays + $saturdays;
+        $workingDays = $allDaysInMonth->count() - $weekendDays;
+
+        $actualAbsentDays = $allDaysInMonth
+            ->filter(function ($date) use ($attendanceRecords) {
+                $dateStr = $date->format('Y-m-d');
+                $isWeekend = in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY]);
+                if ($isWeekend) return false;
+                return !$attendanceRecords->has($dateStr);
+            })
+            ->count();
+
+        $actualPresentDays = $allDaysInMonth
+            ->filter(function ($date) use ($attendanceRecords) {
+                $dateStr = $date->format('Y-m-d');
+                $isWeekend = in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY]);
+                if ($isWeekend) return false;
+                $record = $attendanceRecords->get($dateStr);
+                return $record && $record->status === 'present';
+            })
+            ->count();
+
+        $statistics = [
+            'actual_present_days' => $actualPresentDays,
+            'actual_absent_days' => $actualAbsentDays,
+            'working_days' => $workingDays,
+            'weekend_days' => $weekendDays,
+        ];
+
+        if ($filterType === 'date_range') {
+            $periodName = $startDate->locale('ar')->translatedFormat('d F Y') . ' - ' . $endDate->locale('ar')->translatedFormat('d F Y');
+            $fileName = 'سجلات_الحضور_' . ($employee->user->full_name ?? $employee->user->name) . '_' . $startDate->format('Y-m-d') . '_' . $endDate->format('Y-m-d') . '.xlsx';
+        } else {
+            $periodName = \Carbon\Carbon::create($selectedYear, $selectedMonthNum, 1)->locale('ar')->translatedFormat('F Y');
+            $fileName = 'سجلات_الحضور_' . ($employee->user->full_name ?? $employee->user->name) . '_' . $periodName . '.xlsx';
+        }
+
+        // تحميل جميع العلاقات المطلوبة بشكل صريح
+        $employee->load(['user', 'department']);
+
+        // الحصول على الاسم الكامل من User model
+        $employeeFullName = $employee->user ? ($employee->user->full_name ?? $employee->user->name) : 'غير محدد';
+
+        return Excel::download(
+            new AttendanceExport($allDaysData, $employee, $periodName, $statistics),
+            $fileName
+        );
     }
 
     /**
