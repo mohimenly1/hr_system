@@ -55,6 +55,10 @@ const hasAnyPermission = (permissions) => {
                             <i class="fas fa-file-alt fa-fw w-6 text-center"></i>
                             <span class="ml-3">التقارير العامة</span>
                         </Link>
+                        <Link v-if="hasPermission('manage attendance')" :href="route('hr.attendance-reports.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/AttendanceReports') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                            <i class="fas fa-chart-bar fa-fw w-6 text-center"></i>
+                            <span class="ml-3">تقارير الحضور والغياب</span>
+                        </Link>
                          <Link v-if="hasPermission('manage leaves')" :href="route('hr.leaves.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/Leaves') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
                             <i class="fas fa-calendar-alt fa-fw w-6 text-center"></i>
                             <span class="ml-3">الإجازات</span>
@@ -126,6 +130,10 @@ const hasAnyPermission = (permissions) => {
                         <Link v-if="hasPermission('manage penalty settings')" :href="route('hr.penalty-settings.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/PenaltySettings') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
                         <i class="fas fa-gavel fa-fw w-6 text-center"></i>
                         <span class="ml-3">إعدادات العقوبات</span>
+                    </Link>
+                        <Link v-if="hasPermission('manage penalty settings')" :href="route('hr.deduction-rules.index')" :class="{ 'bg-gray-700': $page.component.startsWith('HR/DeductionRules') }" class="flex items-center px-2 py-2 text-sm font-medium rounded-md hover:bg-gray-700">
+                        <i class="fas fa-calculator fa-fw w-6 text-center"></i>
+                        <span class="ml-3">معادلات وقواعد الخصم</span>
                     </Link>
 
                     <!-- ### إضافة إعدادات المراسلات ### -->

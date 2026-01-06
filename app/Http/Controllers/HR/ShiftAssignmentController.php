@@ -28,4 +28,18 @@ class ShiftAssignmentController extends Controller
 
         return redirect()->back()->with('success', 'تم تعيين الدوام بنجاح.');
     }
+
+    public function destroy(Request $request)
+    {
+        $request->validate([
+            'shiftable_id' => 'required|integer',
+            'shiftable_type' => 'required|string',
+        ]);
+
+        ShiftAssignment::where('shiftable_id', $request->shiftable_id)
+            ->where('shiftable_type', $request->shiftable_type)
+            ->delete();
+
+        return redirect()->back()->with('success', 'تم إزالة الوردية المحددة بنجاح.');
+    }
 }

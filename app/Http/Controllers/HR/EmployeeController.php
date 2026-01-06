@@ -21,6 +21,7 @@ use App\Services\FingerprintService; // سنفترض وجود خدمة لسحب 
 use Illuminate\Support\Facades\Auth; // <-- إضافة مهمة
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use App\Models\LeaveType;
+use App\Models\Leave;
 use App\Services\LeaveBalanceService;
 use Illuminate\Validation\ValidationException;
 use App\Models\EvaluationCriterion;
@@ -580,7 +581,34 @@ class EmployeeController extends Controller
             ]);
         }
 
-        $employee->leaves()->create($validated);
+        // إصلاح AUTO_INCREMENT إذا لم يكن موجوداً (حل مؤقت)
+        // نتحقق من أن id هو PRIMARY KEY أولاً
+        try {
+            // محاولة إضافة PRIMARY KEY إذا لم يكن موجوداً
+            DB::statement('ALTER TABLE `leaves` ADD PRIMARY KEY (`id`)');
+        } catch (\Exception $e) {
+            // تجاهل الخطأ إذا كان PRIMARY KEY موجوداً بالفعل
+        }
+
+        try {
+            // الآن إضافة AUTO_INCREMENT
+            DB::statement('ALTER TABLE `leaves` MODIFY `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT');
+        } catch (\Exception $e) {
+            // تجاهل الخطأ إذا كان AUTO_INCREMENT موجوداً بالفعل
+            Log::info('AUTO_INCREMENT already set or error: ' . $e->getMessage());
+        }
+
+        // إنشاء الإجازة مع تحديد leavable_id و leavable_type بشكل صريح
+        // استخدام create مباشرة من الـ model لضمان أن Laravel يقوم بتعيين id تلقائياً
+        Leave::create([
+            'leavable_id' => $employee->id,
+            'leavable_type' => Employee::class,
+            'leave_type_id' => $validated['leave_type_id'],
+            'start_date' => $validated['start_date'],
+            'end_date' => $validated['end_date'],
+            'reason' => $validated['reason'],
+            'status' => 'pending', // الحالة الافتراضية
+        ]);
 
         return Redirect::back()->with('success', 'تم تسجيل طلب الإجازة للموظف بنجاح.');
     }

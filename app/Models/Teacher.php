@@ -46,7 +46,7 @@ class Teacher extends Model
     {
         return $this->hasMany(TeacherContract::class);
     }
-    
+
     public function assignments(): HasMany
     {
         return $this->hasMany(TeacherAssignment::class);
@@ -65,7 +65,7 @@ class Teacher extends Model
     {
         return $this->morphMany(Attachment::class, 'attachable');
     }
-    
+
     /**
      * Get all of the work experiences for the teacher.
      * This is now a polymorphic relationship.
@@ -113,6 +113,14 @@ public function evaluations(): MorphMany
 public function penalties(): MorphMany
 {
     return $this->morphMany(Penalty::class, 'penalizable');
+}
+
+/**
+ * Get custom hours for hourly teachers.
+ */
+public function customHours(): MorphMany
+{
+    return $this->morphMany(CustomHour::class, 'hourly');
 }
 }
 

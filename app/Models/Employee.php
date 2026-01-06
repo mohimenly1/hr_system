@@ -118,6 +118,14 @@ public function penalties(): MorphMany
 }
 
 /**
+ * Get custom hours for hourly employees.
+ */
+public function customHours(): MorphMany
+{
+    return $this->morphMany(CustomHour::class, 'hourly');
+}
+
+/**
  * Generate a unique employee_id automatically
  * Format: EMP-YYYY-NNNN (e.g., EMP-2025-0001)
  */
@@ -125,12 +133,12 @@ public static function generateEmployeeId(): string
 {
     $year = date('Y');
     $prefix = "EMP-{$year}-";
-    
+
     // Get the last employee_id for this year
     $lastEmployee = self::where('employee_id', 'like', $prefix . '%')
         ->orderBy('employee_id', 'desc')
         ->first();
-    
+
     if ($lastEmployee) {
         // Extract the number part
         $lastNumber = (int) substr($lastEmployee->employee_id, strlen($prefix));
@@ -139,16 +147,16 @@ public static function generateEmployeeId(): string
         // First employee of the year
         $newNumber = 1;
     }
-    
+
     // Format with leading zeros (4 digits)
     $employeeId = $prefix . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
-    
+
     // Double check uniqueness (in case of race condition)
     while (self::where('employee_id', $employeeId)->exists()) {
         $newNumber++;
         $employeeId = $prefix . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
     }
-    
+
     return $employeeId;
 }
 }

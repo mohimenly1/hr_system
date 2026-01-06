@@ -1,10 +1,43 @@
-<script setup>
+<script setup lang="ts">
 import HrLayout from '../../../layouts/HrLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 
 defineProps({
     payslips: Object,
 });
+
+const deletePayslip = (payslipId) => {
+    if (confirm('هل أنت متأكد من حذف قسيمة الراتب؟ يمكن استرجاعها لاحقاً من سلة المحذوفات.')) {
+        router.delete(route('hr.payroll.destroy', payslipId), {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Success message is handled by backend
+            },
+        });
+    }
+};
+
+const restorePayslip = (payslipId) => {
+    if (confirm('هل تريد استرجاع قسيمة الراتب؟')) {
+        router.post(route('hr.payroll.restore', payslipId), {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Success message is handled by backend
+            },
+        });
+    }
+};
+
+const forceDeletePayslip = (payslipId) => {
+    if (confirm('هل أنت متأكد من الحذف النهائي لقسيمة الراتب؟ لا يمكن التراجع عن هذه العملية.')) {
+        router.delete(route('hr.payroll.force-delete', payslipId), {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Success message is handled by backend
+            },
+        });
+    }
+};
 
 const getStatusClass = (status) => {
     switch (status) {
@@ -37,9 +70,14 @@ const getStatusText = (status) => {
         <div class="bg-white shadow-md rounded-lg p-6">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold">قائمة الرواتب</h2>
-                <Link :href="route('hr.payroll.create')" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
-                    <i class="fas fa-cogs mr-2"></i> إنشاء رواتب شهر جديد
-                </Link>
+                <div class="flex gap-3">
+                    <Link :href="route('hr.payroll.expenses')" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-lg">
+                        <i class="fas fa-vault mr-2"></i> خزينة المصروفات
+                    </Link>
+                    <Link :href="route('hr.payroll.process')" class="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-2 rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all font-semibold shadow-lg">
+                        <i class="fas fa-money-bill-wave mr-2"></i> صرف رواتب جديد
+                    </Link>
+                </div>
             </div>
 
             <div class="overflow-x-auto">
@@ -55,8 +93,10 @@ const getStatusText = (status) => {
                         </tr>
                     </thead>
                     <tbody class="text-gray-700">
-                        <tr v-for="payslip in payslips.data" :key="payslip.id" class="border-b hover:bg-gray-50">
-                            <td class="py-3 px-4 font-medium">{{ payslip.employee.user.name }}</td>
+                        <tr v-for="payslip in payslips.data" :key="payslip.id" :class="['border-b hover:bg-gray-50', payslip.deleted_at ? 'bg-red-50 opacity-75' : '']">
+                            <td class="py-3 px-4 font-medium">
+                                {{ payslip.employee?.user?.full_name || payslip.employee?.user?.name || payslip.teacher?.user?.full_name || payslip.teacher?.user?.name }}
+                            </td>
                             <td class="py-3 px-4">{{ payslip.month }} / {{ payslip.year }}</td>
                             <td class="py-3 px-4 font-semibold">{{ payslip.net_salary }}</td>
                              <td class="py-3 px-4">
@@ -65,9 +105,38 @@ const getStatusText = (status) => {
                                 </span>
                             </td>
                             <td class="py-3 px-4">{{ payslip.issue_date }}</td>
-                            <Link :href="route('hr.payroll.show', payslip.id)" class="text-indigo-600 hover:text-indigo-900 font-semibold">
-                                    عرض التفاصيل
-                                </Link>
+                            <td class="py-3 px-4">
+                                <div class="flex items-center gap-3">
+                                    <Link :href="route('hr.payroll.show', payslip.id)" class="text-indigo-600 hover:text-indigo-900 font-semibold">
+                                        عرض التفاصيل
+                                    </Link>
+                                    <div v-if="payslip.deleted_at" class="flex items-center gap-2">
+                                        <span class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">محذوف</span>
+                                        <button
+                                            @click="restorePayslip(payslip.id)"
+                                            class="text-green-600 hover:text-green-900 text-sm font-semibold"
+                                            title="استرجاع"
+                                        >
+                                            <i class="fas fa-undo"></i>
+                                        </button>
+                                        <button
+                                            @click="forceDeletePayslip(payslip.id)"
+                                            class="text-red-600 hover:text-red-900 text-sm font-semibold"
+                                            title="حذف نهائي"
+                                        >
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
+                                    <button
+                                        v-else
+                                        @click="deletePayslip(payslip.id)"
+                                        class="text-red-600 hover:text-red-900 text-sm font-semibold"
+                                        title="حذف"
+                                    >
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                         <tr v-if="payslips.data.length === 0">
                             <td colspan="6" class="text-center py-4">لا يوجد قسائم رواتب لعرضها.</td>

@@ -18,7 +18,8 @@ class EmployeePortalController extends Controller
     public function myPayslips()
     {
         $employeeId = Auth::user()->employee->id;
-        
+
+        // Soft deleted payslips are automatically excluded by Laravel's SoftDeletes
         $payslips = Payslip::where('employee_id', $employeeId)
             ->latest()
             ->paginate(10);
@@ -55,7 +56,7 @@ class EmployeePortalController extends Controller
         $leaves = Leave::where('employee_id', $employeeId)
             ->latest()
             ->paginate(10);
-            
+
         return Inertia::render('Employee/MyLeaves/Index', [
             'leaves' => $leaves
         ]);
